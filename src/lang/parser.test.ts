@@ -76,6 +76,12 @@ describe("grammar", () => {
 		expect(fold.ok && print(fold.expr)).toBe("foldl (\\a b -> a + b) 0 [1, 2]");
 	});
 
+	it("atom: parenthesized negative literal", () => {
+		expect(parse("(-3)")).toEqual(ok(num(-3)));
+		expect(parse("f (-1)")).toEqual(ok(app(v("f"), num(-1))));
+		expect(parse("(-0)")).toEqual(ok(num(0)));
+	});
+
 	it("atom: list", () => {
 		expect(parse("[]")).toEqual(ok({ tag: "list", items: [] }));
 		expect(parse("[1, 2 + 3]")).toEqual(ok({ tag: "list", items: [num(1), bin("+", num(2), num(3))] }));
@@ -109,7 +115,40 @@ describe("errors", () => {
 
 	it("unclosed bracket points at the opener", () => {
 		expect(parse("map f\n  [1, 2")).toEqual(err(2, 3, 'unclosed "["'));
+		expect(parse("map f\n  [")).toEqual(err(2, 3, 'unclosed "["'));
 		expect(parse("(1 + 2")).toEqual(err(1, 1, 'unclosed "("'));
+		expect(parse("[1, (2")).toEqual(err(1, 5, 'unclosed "("'));
+		expect(parse("(1 + 2]")).toEqual(err(1, 1, 'unclosed "("'));
+	});
+
+	it("a closed bracket with a bad token inside names the token", () => {
+		expect(parse("(x = 1)")).toEqual(err(1, 4, 'unexpected "="'));
+		expect(parse("(1, 2)")).toEqual(err(1, 3, 'unexpected ","'));
+		expect(parse("[1, 2 then]")).toEqual(err(1, 7, 'unexpected "then"'));
+	});
+
+	it("expression is nested too deeply, instead of a stack overflow", () => {
+		const tooDeep = err(1, 501, "expression is nested too deeply");
+		expect(parse("(".repeat(10000) + "1" + ")".repeat(10000))).toEqual(tooDeep);
+		expect(parse("[".repeat(10000) + "]".repeat(10000))).toEqual(tooDeep);
+		expect(parse(Array(20000).fill("1").join(" : ") + " : []").ok).toBe(false);
+		expect(parse(Array(20000).fill("1").join(" + ")).ok).toBe(false);
+		expect(parse(Array(20000).fill("f").join(" ")).ok).toBe(false);
+		expect(parse(`\\${Array(20000).fill("x").join(" ")} -> x`).ok).toBe(false);
+	});
+
+	it("anything under the depth limit parses and prints", () => {
+		const sources = [
+			"(".repeat(400) + "1" + ")".repeat(400),
+			Array(400).fill("1").join(" : ") + " : []",
+			Array(400).fill("1").join(" + "),
+			Array(400).fill("f").join(" "),
+			"let x = 1 in ".repeat(400) + "x",
+		];
+		for (const source of sources) {
+			const result = parse(source);
+			expect(result.ok && print(result.expr).length).toBeGreaterThan(0);
+		}
 	});
 
 	it("comparisons cannot be chained", () => {
@@ -141,6 +180,8 @@ describe("print", () => {
 			"(\\x -> x) 1",
 			"1 + (\\x -> x)",
 			"(1 < 2) == True",
+			"f (-1) * (-2)",
+			"[(-1), 2]",
 			"let sq = \\x -> x * x in map sq [1, 2, 3]",
 		];
 		for (const source of cases) {
@@ -158,7 +199,7 @@ const builtins: readonly Builtin[] = ["map", "filter", "foldl", "foldr"];
 const { expr: arbExpr } = fc.letrec<{ expr: Expr }>((tie) => ({
 	expr: fc.oneof(
 		{ depthSize: "small", withCrossShrink: true },
-		fc.nat().map(num),
+		fc.maxSafeInteger().map(num),
 		fc.boolean().map((value): Expr => ({ tag: "bool", value })),
 		ident.map(v),
 		fc.constantFrom(...builtins).map(builtin),

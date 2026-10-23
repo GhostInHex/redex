@@ -1,6 +1,8 @@
 import { isBuiltin, isOp, OP_TIER, type Expr, type Op, type ParseError, type ParseResult, type Tier } from "./ast.ts";
 import { lex, type Keyword, type Sym, type Token } from "./lexer.ts";
 
+const MAX_DEPTH = 500;
+
 class ParseFailure {
 	readonly error: ParseError;
 	constructor(error: ParseError) {
@@ -19,23 +21,29 @@ export function parse(source: string): ParseResult {
 	}
 }
 
-const startsAtom = (t: Token) =>
-	t.kind === "int" ||
-	t.kind === "ident" ||
-	(t.kind === "keyword" && (t.text === "True" || t.text === "False")) ||
-	(t.kind === "symbol" && (t.text === "(" || t.text === "["));
+const isSymbol = (t: Token, text: Sym) => t.kind === "symbol" && t.text === text;
+const isCloser = (t: Token) => isSymbol(t, ")") || isSymbol(t, "]");
+const unclosed = (opener: Token) => `unclosed "${opener.text}"`;
 
 function parseTokens(tokens: readonly Token[]): Expr {
 	let i = 0;
+	let depth = 0;
+	const open: Token[] = [];
 	const peek = () => tokens[i];
 
 	const fail = (at: Token, message: string): never => {
+		const opener = at.kind === "eof" ? open.at(-1) : undefined;
+		if (opener) return fail(opener, unclosed(opener));
 		throw new ParseFailure({ message, line: at.line, col: at.col });
 	};
 
-	const eat = (text: Keyword | Sym) => {
+	const is = (text: Keyword | Sym) => {
 		const t = peek();
-		if ((t.kind !== "keyword" && t.kind !== "symbol") || t.text !== text) return false;
+		return (t.kind === "keyword" || t.kind === "symbol") && t.text === text;
+	};
+
+	const eat = (text: Keyword | Sym) => {
+		if (!is(text)) return false;
 		i++;
 		return true;
 	};
@@ -44,8 +52,28 @@ function parseTokens(tokens: readonly Token[]): Expr {
 		if (!eat(text)) fail(peek(), `expected "${text}"`);
 	};
 
-	const close = (opener: Token, closer: ")" | "]") => {
-		if (!eat(closer)) fail(opener, `unclosed "${opener.text}"`);
+	const deeper = () => {
+		if (++depth > MAX_DEPTH) fail(peek(), "expression is nested too deeply");
+	};
+
+	const nested = (parseInner: () => Expr): Expr => {
+		const outer = depth;
+		deeper();
+		const result = parseInner();
+		depth = outer;
+		return result;
+	};
+
+	const bracketed = (opener: Token, closer: ")" | "]", parseInner: () => Expr): Expr => {
+		open.push(opener);
+		const result = parseInner();
+		if (!eat(closer)) {
+			const t = peek();
+			if (isCloser(t)) fail(opener, unclosed(opener));
+			fail(t, `unexpected "${t.text}"`);
+		}
+		open.pop();
+		return result;
 	};
 
 	const name = (): string => {
@@ -55,34 +83,44 @@ function parseTokens(tokens: readonly Token[]): Expr {
 		return t.text;
 	};
 
+	const int = (t: Token): number => {
+		const value = Number(t.text);
+		if (!Number.isSafeInteger(value)) fail(t, "number too large");
+		return value;
+	};
+
 	const opAt = (tier: Tier): Op | undefined => {
 		const t = peek();
 		return t.kind === "symbol" && isOp(t.text) && OP_TIER[t.text] === tier ? t.text : undefined;
 	};
 
-	const expr = (): Expr => {
-		if (eat("let")) {
-			const bound = name();
-			expect("=");
-			const value = expr();
-			expect("in");
-			return { tag: "let", name: bound, value, body: expr() };
-		}
-		if (eat("\\")) {
-			const params = [name()];
-			while (peek().kind === "ident") params.push(name());
-			expect("->");
-			return params.reduceRight<Expr>((body, param) => ({ tag: "lam", param, body }), expr());
-		}
-		if (eat("if")) {
-			const cond = expr();
-			expect("then");
-			const then = expr();
-			expect("else");
-			return { tag: "if", cond, then, else: expr() };
-		}
-		return cmp();
-	};
+	const expr = (): Expr =>
+		nested(() => {
+			if (eat("let")) {
+				const bound = name();
+				expect("=");
+				const value = expr();
+				expect("in");
+				return { tag: "let", name: bound, value, body: expr() };
+			}
+			if (eat("\\")) {
+				const params = [name()];
+				while (peek().kind === "ident") {
+					deeper();
+					params.push(name());
+				}
+				expect("->");
+				return params.reduceRight<Expr>((body, param) => ({ tag: "lam", param, body }), expr());
+			}
+			if (eat("if")) {
+				const cond = expr();
+				expect("then");
+				const then = expr();
+				expect("else");
+				return { tag: "if", cond, then, else: expr() };
+			}
+			return cmp();
+		});
 
 	const cmp = (): Expr => {
 		const left = cons();
@@ -96,70 +134,82 @@ function parseTokens(tokens: readonly Token[]): Expr {
 
 	const cons = (): Expr => {
 		const head = add();
-		return eat(":") ? { tag: "cons", head, tail: cons() } : head;
+		return eat(":") ? { tag: "cons", head, tail: nested(cons) } : head;
 	};
 
 	const leftAssoc = (tier: Tier, operand: () => Expr) => (): Expr => {
+		const outer = depth;
 		let left = operand();
 		for (let op = opAt(tier); op; op = opAt(tier)) {
 			i++;
+			deeper();
 			left = { tag: "binop", op, left, right: operand() };
 		}
+		depth = outer;
 		return left;
 	};
 
 	const app = (): Expr => {
+		const outer = depth;
 		let fn = atom();
-		while (startsAtom(peek())) fn = { tag: "app", fn, arg: atom() };
+		for (let arg = tryAtom(); arg; arg = tryAtom()) {
+			deeper();
+			fn = { tag: "app", fn, arg };
+		}
+		depth = outer;
 		return fn;
 	};
 
 	const mul = leftAssoc("mul", app);
 	const add = leftAssoc("add", mul);
 
-	const atom = (): Expr => {
+	const atom = (): Expr => tryAtom() ?? fail(peek(), "expected an expression");
+
+	const tryAtom = (): Expr | undefined => {
 		const t = peek();
 		switch (t.kind) {
-			case "int": {
-				const value = Number(t.text);
-				if (!Number.isSafeInteger(value)) fail(t, "number too large");
+			case "int":
 				i++;
-				return { tag: "num", value };
-			}
+				return { tag: "num", value: int(t) };
 			case "ident":
 				i++;
 				return isBuiltin(t.text) ? { tag: "builtin", name: t.text } : { tag: "var", name: t.text };
 			case "keyword":
-				if (t.text !== "True" && t.text !== "False") break;
+				if (t.text !== "True" && t.text !== "False") return undefined;
 				i++;
 				return { tag: "bool", value: t.text === "True" };
-			case "symbol": {
+			case "symbol":
 				if (t.text === "(") {
 					i++;
 					const op = peek();
-					const after = tokens[i + 1];
-					if (op.kind === "symbol" && isOp(op.text) && after.kind === "symbol" && after.text === ")") {
-						i += 2;
-						return section(op.text);
+					const next = tokens[i + 1];
+					if (op.kind === "symbol" && isOp(op.text)) {
+						if (isSymbol(next, ")")) {
+							i += 2;
+							return section(op.text);
+						}
+						if (op.text === "-" && next.kind === "int" && isSymbol(tokens[i + 2], ")")) {
+							i += 3;
+							return { tag: "num", value: 0 - int(next) };
+						}
 					}
-					const inner = expr();
-					close(t, ")");
-					return inner;
+					return bracketed(t, ")", expr);
 				}
 				if (t.text === "[") {
 					i++;
-					const items: Expr[] = [];
-					if (!eat("]")) {
-						do items.push(expr());
-						while (eat(","));
-						close(t, "]");
-					}
-					return { tag: "list", items };
+					return bracketed(t, "]", () => {
+						const items: Expr[] = [];
+						if (!is("]")) {
+							do items.push(expr());
+							while (eat(","));
+						}
+						return { tag: "list", items };
+					});
 				}
-				break;
-			}
+				return undefined;
+			case "eof":
+				return undefined;
 		}
-		return fail(t, "expected an expression");
 	};
 
 	const program = expr();

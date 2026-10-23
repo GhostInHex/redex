@@ -44,7 +44,7 @@ const at = (e: Expr, min: Level): string => {
 const bare = (e: Expr): string => {
 	switch (e.tag) {
 		case "num":
-			return String(e.value);
+			return e.value < 0 ? `(-${-e.value})` : String(e.value);
 		case "bool":
 			return e.value ? "True" : "False";
 		case "var":
