@@ -5,19 +5,28 @@ export type StepResult =
 	| { readonly tag: "value" }
 	| { readonly tag: "stuck"; readonly path: Path; readonly reason: string };
 
+type Trail = { readonly index: number; readonly rest: Trail } | undefined;
+
 type Found =
 	| { readonly tag: "value" }
-	| { readonly tag: "rewrite"; readonly rule: Rule; readonly path: Path; readonly expr: Expr }
-	| { readonly tag: "stuck"; readonly path: Path; readonly reason: string };
+	| { readonly tag: "rewrite"; readonly rule: Rule; readonly trail: Trail; readonly expr: Expr }
+	| { readonly tag: "stuck"; readonly trail: Trail; readonly reason: string };
+
+const toPath = (trail: Trail): Path => {
+	const path: number[] = [];
+	for (let t = trail; t; t = t.rest) path.push(t.index);
+	return path;
+};
 
 export function step(expr: Expr): StepResult {
 	const found = find(expr);
 	switch (found.tag) {
 		case "value":
-		case "stuck":
 			return found;
+		case "stuck":
+			return { tag: "stuck", path: toPath(found.trail), reason: found.reason };
 		case "rewrite":
-			return { tag: "step", step: { rule: found.rule, path: found.path, before: expr, after: found.expr } };
+			return { tag: "step", step: { rule: found.rule, path: toPath(found.trail), before: expr, after: found.expr } };
 	}
 }
 
@@ -70,8 +79,8 @@ const withChild = (e: Expr, i: number, child: Expr): Expr => {
 };
 
 const VALUE: Found = { tag: "value" };
-const rewrite = (rule: Rule, expr: Expr): Found => ({ tag: "rewrite", rule, path: [], expr });
-const stuck = (reason: string): Found => ({ tag: "stuck", path: [], reason });
+const rewrite = (rule: Rule, expr: Expr): Found => ({ tag: "rewrite", rule, trail: undefined, expr });
+const stuck = (reason: string): Found => ({ tag: "stuck", trail: undefined, reason });
 
 function find(e: Expr): Found {
 	switch (e.tag) {
@@ -97,20 +106,14 @@ function find(e: Expr): Found {
 	}
 }
 
-const firstInChildren = (e: Expr, count: number): Found | undefined =>
-	childrenOf(e)
-		.slice(0, count)
-		.reduce<Found | undefined>((hit, child, i) => hit ?? inChild(e, i, find(child)), undefined);
-
-const inChild = (e: Expr, i: number, found: Found): Found | undefined => {
-	switch (found.tag) {
-		case "value":
-			return undefined;
-		case "rewrite":
-			return { ...found, path: [i, ...found.path], expr: withChild(e, i, found.expr) };
-		case "stuck":
-			return { ...found, path: [i, ...found.path] };
+const firstInChildren = (e: Expr, count: number): Found | undefined => {
+	const children = childrenOf(e);
+	for (let i = 0; i < count; i++) {
+		const found = find(children[i]);
+		if (found.tag === "rewrite") return { ...found, trail: { index: i, rest: found.trail }, expr: withChild(e, i, found.expr) };
+		if (found.tag === "stuck") return { ...found, trail: { index: i, rest: found.trail } };
 	}
+	return undefined;
 };
 
 const num = (value: number): Expr => ({ tag: "num", value: value === 0 ? 0 : value });
