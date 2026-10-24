@@ -15,7 +15,7 @@ export default function Timeline({ index, last, playing, onBack, onNext, onSeek,
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
 			const target = event.target as HTMLElement | null;
-			if (target?.closest(".cm-editor, input, textarea")) return;
+			if (event.defaultPrevented || target?.closest(".cm-editor, input, textarea, select, button, a[href], [contenteditable], [role='button'], [role='menuitem'], [role='dialog']")) return;
 			if (event.key === "ArrowRight") {
 				event.preventDefault();
 				onNext();

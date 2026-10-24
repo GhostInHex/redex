@@ -84,6 +84,7 @@ button.run {
 	padding: 4px 0;
 }
 
+.expr-display-note,
 .expr-note {
 	margin: 0;
 	color: #8b93a7;
