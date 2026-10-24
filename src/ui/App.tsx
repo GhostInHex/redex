@@ -40,17 +40,18 @@ const readEntry = (): Entry => {
 	return { source: DEFAULT_SOURCE, shared: false, notice: undefined };
 };
 
-const copyText = async (text: string): Promise<boolean> => {
+const copyText = async (text: string, dialog: HTMLDialogElement | null): Promise<boolean> => {
 	try {
 		await navigator.clipboard.writeText(text);
 		return true;
 	} catch {
+		const focused = document.activeElement;
 		const area = document.createElement("textarea");
 		area.value = text;
 		area.setAttribute("readonly", "");
 		area.style.position = "fixed";
 		area.style.opacity = "0";
-		document.body.append(area);
+		(dialog?.open ? dialog : document.body).append(area);
 		area.select();
 		let ok = false;
 		try {
@@ -59,31 +60,9 @@ const copyText = async (text: string): Promise<boolean> => {
 			ok = false;
 		}
 		area.remove();
+		if (focused instanceof HTMLElement && focused.isConnected) focused.focus({ preventScroll: true });
 		return ok;
 	}
-};
-
-const backdrop: CSSProperties = {
-	position: "fixed",
-	inset: 0,
-	zIndex: 40,
-	display: "flex",
-	alignItems: "center",
-	justifyContent: "center",
-	padding: 16,
-	background: "rgba(8, 10, 14, 0.72)",
-};
-
-const panel: CSSProperties = {
-	width: "min(640px, 100%)",
-	display: "flex",
-	flexDirection: "column",
-	gap: 12,
-	padding: 20,
-	borderRadius: 12,
-	border: "1px solid #3a3f4f",
-	background: "#1b1e28",
-	boxShadow: "0 24px 60px rgba(0, 0, 0, 0.6)",
 };
 
 const field: CSSProperties = {
@@ -124,7 +103,7 @@ export default function App() {
 	const [parseError, setParseError] = useState<ParseError | undefined>(undefined);
 	const [editorEpoch, setEditorEpoch] = useState(0);
 	const runPendingTime = useRef<number | null>(null);
-	const [shareOpen, setShareOpen] = useState(false);
+	const shareDialog = useRef<HTMLDialogElement>(null);
 	const [copied, setCopied] = useState<"" | "link" | "embed">("");
 	const timer = useRef<number | undefined>(undefined);
 
@@ -170,7 +149,7 @@ export default function App() {
 	const snippet = embedSnippet(embedLink);
 
 	const copy = useCallback((text: string, what: "link" | "embed") => {
-		void copyText(text).then((ok) => {
+		void copyText(text, shareDialog.current).then((ok) => {
 			window.clearTimeout(timer.current);
 			setCopied(ok ? what : "");
 			timer.current = window.setTimeout(() => setCopied(""), 2400);
@@ -178,15 +157,6 @@ export default function App() {
 	}, []);
 
 	useEffect(() => () => window.clearTimeout(timer.current), []);
-
-	useEffect(() => {
-		if (!shareOpen) return;
-		const onKey = (event: KeyboardEvent) => {
-			if (event.key === "Escape") setShareOpen(false);
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, [shareOpen]);
 
 	useEffect(() => {
 		if (!entry.shared && !EMBED) return;
@@ -286,7 +256,7 @@ export default function App() {
 					type="button"
 					aria-label="Share this program"
 					onClick={() => {
-						setShareOpen(true);
+						shareDialog.current?.showModal();
 						copy(link, "link");
 					}}
 				>
@@ -298,43 +268,33 @@ export default function App() {
 			{state.status !== "error" && parseError && <p className="error">{parseError.message}</p>}
 			{state.status === "error" && <p className="error">{state.error}</p>}
 			{stepperView}
-			{shareOpen && (
-				<div style={backdrop} onClick={() => setShareOpen(false)}>
-					<section
-						role="dialog"
-						aria-modal="true"
-						aria-label="Share this program"
-						style={panel}
-						onClick={(event) => event.stopPropagation()}
-					>
-						<h2 style={{ margin: 0, fontSize: 18 }}>Share this program</h2>
-						<p style={hint}>The whole program lives in the link, so anyone who opens it sees exactly this source.</p>
-						<input style={field} readOnly aria-label="Share link" value={link} onFocus={(event) => event.currentTarget.select()} />
-						<div style={row}>
-							<button type="button" onClick={() => copy(link, "link")}>
-								{copied === "link" ? "Link copied" : "Copy link"}
-							</button>
-							<button type="button" onClick={() => setShareOpen(false)}>
-								Close
-							</button>
-						</div>
-						<p style={hint}>Embed the stepper on a lesson page.</p>
-						<textarea
-							style={{ ...field, resize: "vertical" }}
-							readOnly
-							rows={3}
-							aria-label="Embed code"
-							value={snippet}
-							onFocus={(event) => event.currentTarget.select()}
-						/>
-						<div style={row}>
-							<button type="button" onClick={() => copy(snippet, "embed")}>
-								{copied === "embed" ? "Code copied" : "Copy embed code"}
-							</button>
-						</div>
-					</section>
+			<dialog ref={shareDialog} className="share-dialog" aria-labelledby="share-title">
+				<h2 id="share-title" style={{ margin: 0, fontSize: 18 }}>Share this program</h2>
+				<p style={hint}>The whole program lives in the link, so anyone who opens it sees exactly this source.</p>
+				<input style={field} autoFocus readOnly aria-label="Share link" value={link} onFocus={(event) => event.currentTarget.select()} />
+				<div style={row}>
+					<button type="button" onClick={() => copy(link, "link")}>
+						{copied === "link" ? "Link copied" : "Copy link"}
+					</button>
+					<button type="button" onClick={() => shareDialog.current?.close()}>
+						Close
+					</button>
 				</div>
-			)}
+				<p style={hint}>Embed the stepper on a lesson page.</p>
+				<textarea
+					style={{ ...field, resize: "vertical" }}
+					readOnly
+					rows={3}
+					aria-label="Embed code"
+					value={snippet}
+					onFocus={(event) => event.currentTarget.select()}
+				/>
+				<div style={row}>
+					<button type="button" onClick={() => copy(snippet, "embed")}>
+						{copied === "embed" ? "Code copied" : "Copy embed code"}
+					</button>
+				</div>
+			</dialog>
 		</main>
 	);
 }

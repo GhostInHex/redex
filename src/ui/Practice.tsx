@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { Expr, Path, Step, Trace } from "../lang/ast.ts";
 import { initialPractice, practice, type PracticeEvent, type PracticeState } from "../practice.ts";
 import ExprView from "./ExprView.tsx";
+import { childrenOf } from "../lang/step.ts";
 import { supportsInteractiveRendering } from "./interactiveRendering.ts";
 
 type Props = { readonly trace: Trace };
@@ -34,35 +35,11 @@ const RULE_TEXT: Readonly<Record<string, string>> = {
 const frameAtExpr = (steps: readonly Step[], start: Expr, index: number): Expr =>
 	steps.slice(0, index).reduce<Expr>((_, step) => step.after, start);
 
-const childrenOfExpr = (e: Expr): readonly Expr[] => {
-	switch (e.tag) {
-		case "num":
-		case "bool":
-		case "var":
-		case "builtin":
-			return [];
-		case "lam":
-			return [e.body];
-		case "app":
-			return [e.fn, e.arg];
-		case "binop":
-			return [e.left, e.right];
-		case "cons":
-			return [e.head, e.tail];
-		case "if":
-			return [e.cond, e.then, e.else];
-		case "let":
-			return [e.value, e.body];
-		case "list":
-			return e.items;
-	}
-};
-
 const pathWithinLam = (expr: Expr, path: Path): boolean => {
 	let node: Expr | undefined = expr;
 	for (let i = 0; i < path.length; i++) {
 		if (!node || node.tag === "lam") return true;
-		node = childrenOfExpr(node)[path[i]];
+		node = childrenOf(node)[path[i]];
 	}
 	return false;
 };

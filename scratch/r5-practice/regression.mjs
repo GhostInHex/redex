@@ -175,7 +175,7 @@ try {
 	assert.match(await text(), /stopped after 5,000 nodes/);
 	assert.doesNotMatch(await text(), /already a value/);
 	await record("zero-step node limit is not reported as a value");
-	await fs.writeFile("/workspace/scratch/redex-audit/r5-fix-browser.json", JSON.stringify({ base, results, errors }, null, 2));
+	if (process.env.REDEX_BROWSER_REPORT) await fs.writeFile(process.env.REDEX_BROWSER_REPORT, JSON.stringify({ base, results, errors }, null, 2));
 	console.log(`All ${results.length} browser regressions passed with no errors.`);
 } finally {
 	await browser.close();
