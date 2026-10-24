@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { trace } from "./lang/trace.ts";
 import { parse } from "./lang/parser.ts";
 import { initialPractice, practice, type PracticeState } from "./practice.ts";
@@ -26,11 +26,13 @@ describe("practice reducer", () => {
 		expect(state).toEqual({ phase: "ask", index: 1, score: 0 });
 	});
 
-	it("finishes on the last step", () => {
+	it("holds feedback on the last correct answer until next", () => {
 		const steps = stepsOf("1 + 2");
 		expect(steps).toHaveLength(1);
 		let state: PracticeState = initialPractice(steps);
 		state = practice(state, { type: "answer", path: steps[0].path }, steps);
+		expect(state).toEqual({ phase: "right", index: 0, score: 1 });
+		state = practice(state, { type: "next" }, steps);
 		expect(state).toEqual({ phase: "done", score: 1 });
 	});
 

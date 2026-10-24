@@ -1,4 +1,4 @@
-﻿:root {
+:root {
 	font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
 	color-scheme: dark;
 	background: #14161c;
@@ -97,6 +97,10 @@ button.run {
 	color: #ffb08c;
 }
 
+.expr-note .limit {
+	color: #ffca4f;
+}
+
 .expr-note .done {
 	color: #8ce0b0;
 }
@@ -111,6 +115,10 @@ button.run {
 .list-row {
 	display: inline-flex;
 	gap: 6px;
+}
+
+.list-empty {
+	color: #8b93a7;
 }
 
 .box {

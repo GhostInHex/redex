@@ -1,4 +1,4 @@
-﻿import type { Path, Step } from "./lang/ast.ts";
+import type { Path, Step } from "./lang/ast.ts";
 
 export type PracticeState =
 	| { readonly phase: "ask"; readonly index: number; readonly score: number }
@@ -21,7 +21,7 @@ export function practice(state: PracticeState, event: PracticeEvent, steps: read
 			if (!step) return state;
 			if (same(event.path, step.path)) {
 				const score = state.score + 1;
-				return state.index + 1 < steps.length ? { phase: "right", index: state.index, score } : { phase: "done", score };
+				return { phase: "right", index: state.index, score };
 			}
 			return { phase: "wrong", index: state.index, clicked: event.path, score: state.score };
 		}

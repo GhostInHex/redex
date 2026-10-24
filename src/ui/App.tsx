@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useReducer, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from "react";
 import type { ParseError } from "../lang/ast.ts";
 import { parse } from "../lang/parser.ts";
 import { trace } from "../lang/trace.ts";
@@ -8,8 +8,8 @@ import Editor from "./Editor.tsx";
 import Embed from "./Embed.tsx";
 import Examples from "./Examples.tsx";
 import ExprView from "./ExprView.tsx";
-import Timeline from "./Timeline.tsx";
 import Practice from "./Practice.tsx";
+import Timeline from "./Timeline.tsx";
 import { frameAt, initialStepper, stepper, type RunSource, type StepperState } from "./stepper.ts";
 
 const runSource: RunSource = (source) => {
@@ -123,15 +123,41 @@ export default function App() {
 	const [mode, setMode] = useState<"watch" | "practice">("watch");
 	const [parseError, setParseError] = useState<ParseError | undefined>(undefined);
 	const [editorEpoch, setEditorEpoch] = useState(0);
+	const runPendingTime = useRef<number | null>(null);
 	const [shareOpen, setShareOpen] = useState(false);
 	const [copied, setCopied] = useState<"" | "link" | "embed">("");
 	const timer = useRef<number | undefined>(undefined);
 
+	const onSourceChange = useCallback((nextSource: string) => {
+		setSource(nextSource);
+		dispatch({ type: "edit" });
+		const parsed = parse(nextSource);
+		setParseError(parsed.ok ? undefined : parsed.error);
+	}, []);
+
 	const setWatch = useCallback(() => setMode("watch"), []);
 	const setPractice = useCallback(() => setMode("practice"), []);
 	const run = useCallback(() => {
+		runPendingTime.current = performance.now();
+		const parsed = parse(source);
+		if (!parsed.ok) {
+			setParseError(parsed.error);
+		} else {
+			setParseError(undefined);
+		}
 		dispatch({ type: "run", source });
 	}, [source]);
+
+	useLayoutEffect(() => {
+		if (runPendingTime.current !== null && state.status === "ready") {
+			const t0 = runPendingTime.current;
+			runPendingTime.current = null;
+			requestAnimationFrame(() => {
+				const duration = performance.now() - t0;
+				console.log(`[redex] run-to-paint ${duration.toFixed(2)} ms`);
+			});
+		}
+	}, [state]);
 
 	const pick = useCallback((next: string) => {
 		setSource(next);
@@ -194,10 +220,11 @@ export default function App() {
 	const frame = ready ? frameAt(state, state.index) : undefined;
 	const nextStep = ready && state.index < state.trace.steps.length ? state.trace.steps[state.index] : undefined;
 	const stuck = ready && state.index === state.trace.steps.length && state.trace.outcome.tag === "stuck" ? state.trace.outcome : undefined;
+	const limitKind = ready && state.index === state.trace.steps.length && state.trace.outcome.tag === "limit" ? state.trace.outcome.kind : undefined;
 
 	const stepperView =
 		mode === "practice" && ready ? (
-			<Practice steps={state.trace.steps} start={state.trace.start} />
+			<Practice trace={state.trace} />
 		) : ready && frame ? (
 			<>
 				<ExprView
@@ -206,6 +233,7 @@ export default function App() {
 					nextRule={nextStep?.rule}
 					stuckPath={stuck?.path}
 					stuckReason={stuck?.reason}
+					limitKind={limitKind}
 				/>
 				<Timeline
 					index={index}
@@ -266,7 +294,7 @@ export default function App() {
 				</button>
 			</header>
 			{entry.notice && <p className="notice">{entry.notice}</p>}
-			<Editor key={editorEpoch} source={source} errorLine={parseError?.line} errorCol={parseError?.col} onChange={setSource} />
+			<Editor key={editorEpoch} source={source} errorLine={parseError?.line} errorCol={parseError?.col} onChange={onSourceChange} />
 			{state.status !== "error" && parseError && <p className="error">{parseError.message}</p>}
 			{state.status === "error" && <p className="error">{state.error}</p>}
 			{stepperView}

@@ -1,4 +1,4 @@
-﻿import type { Trace } from "../lang/ast.ts";
+import type { Trace } from "../lang/ast.ts";
 
 export type StepperEvent =
 	| { readonly type: "edit" }
@@ -44,12 +44,16 @@ export function stepper(state: StepperState, event: StepperEvent, run?: RunSourc
 		case "seek":
 			return state.status === "ready" ? { ...state, index: Math.max(0, Math.min(event.index, state.trace.steps.length)) } : state;
 		case "play":
-			return state.status === "ready" ? { ...state, playing: true } : state;
+			if (state.status !== "ready") return state;
+			if (state.index >= state.trace.steps.length) return state;
+			return { ...state, playing: true };
 		case "pause":
 			return state.status === "ready" ? { ...state, playing: false } : state;
-		case "tick":
+		case "tick": {
 			if (state.status !== "ready" || !state.playing) return state;
-			return { ...state, index: Math.min(state.index + 1, state.trace.steps.length), playing: state.index < state.trace.steps.length };
+			const nextIndex = Math.min(state.index + 1, state.trace.steps.length);
+			const stillPlaying = nextIndex < state.trace.steps.length;
+			return { ...state, index: nextIndex, playing: stillPlaying };
+		}
 	}
 }
-

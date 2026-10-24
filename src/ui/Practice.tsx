@@ -1,12 +1,18 @@
-﻿import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
-import type { Expr, Path, Step } from "../lang/ast.ts";
-import { initialPractice, practice, type PracticeState } from "../practice.ts";
+import { useCallback, useEffect, useReducer, useRef } from "react";
+import type { Expr, Path, Step, Trace } from "../lang/ast.ts";
+import { initialPractice, practice, type PracticeEvent, type PracticeState } from "../practice.ts";
 import ExprView from "./ExprView.tsx";
+import { supportsInteractiveRendering } from "./interactiveRendering.ts";
 
-type Props = {
-	readonly steps: readonly Step[];
-	readonly start: Expr;
-};
+type Props = { readonly trace: Trace };
+type Session = { readonly trace: Trace; readonly progress: PracticeState };
+type Event = PracticeEvent | { readonly type: "replace"; readonly trace: Trace };
+
+const initialSession = (trace: Trace): Session => ({ trace, progress: initialPractice(trace.steps) });
+const sessionReducer = (session: Session, event: Event): Session =>
+	event.type === "replace"
+		? initialSession(event.trace)
+		: { trace: session.trace, progress: practice(session.progress, event, session.trace.steps) };
 
 const RULE_TEXT: Readonly<Record<string, string>> = {
 	arith: "this operation has two values, so it runs now",
@@ -61,22 +67,13 @@ const pathWithinLam = (expr: Expr, path: Path): boolean => {
 	return false;
 };
 
-export default function Practice({ steps, start }: Props) {
-	const [state, dispatch] = useReducer(
-		(state: PracticeState, event: Parameters<typeof practice>[1]) => practice(state, event, steps),
-		[steps],
-		([initialSteps]) => initialPractice(initialSteps),
-	);
+export default function Practice({ trace }: Props) {
+	const [session, dispatch] = useReducer(sessionReducer, trace, initialSession);
 	const painted = useRef<number | undefined>(undefined);
-	const total = steps.length;
-
-	const pick = useCallback(
-		(path: Path) => {
-			painted.current = performance.now();
-			dispatch({ type: "answer", path });
-		},
-		[dispatch],
-	);
+	const pick = useCallback((path: Path) => {
+		painted.current = performance.now();
+		dispatch({ type: "answer", path });
+	}, []);
 
 	useEffect(() => {
 		if (painted.current === undefined) return;
@@ -90,55 +87,78 @@ export default function Practice({ steps, start }: Props) {
 			cancelAnimationFrame(first);
 			cancelAnimationFrame(second);
 		};
-	}, [state]);
+	}, [session]);
 
-	const frame = state.phase === "done" ? undefined : frameAtExpr(steps, start, state.index);
-	const step = state.phase === "done" ? undefined : steps[state.index];
-	const hint = useMemo(() => {
-		if (!step) return undefined;
-		if (state.phase === "wrong") {
-			const clickedInsideLam = pathWithinLam(frameAtExpr(steps, start, state.index), state.clicked);
-			if (clickedInsideLam) return "Code inside a lambda runs only after the lambda gets an argument.";
-			if (state.clicked.length < step.path.length && state.clicked.every((n, i) => n === step.path[i])) return "This part runs, but something inside it runs first.";
-			return RULE_TEXT[step.rule] ?? `${step.rule} runs here.`;
-		}
-		return undefined;
-	}, [state, step, steps, start]);
+	if (session.trace !== trace) {
+		dispatch({ type: "replace", trace });
+		return null;
+	}
 
+	const state = session.progress;
+	const { steps, start, outcome } = session.trace;
+	const total = steps.length;
 	if (state.phase === "done") {
+		const frame = steps.at(-1)?.after ?? start;
+		const emptyMessage = outcome.tag === "value"
+			? "Nothing to practice. This program is already a value."
+			: outcome.tag === "stuck"
+				? "Nothing to practice. Evaluation is stuck."
+				: "Nothing to practice. Evaluation reached a limit.";
 		return (
 			<section className="practice" aria-label="Practice result">
-				<p className="practice-ask">{total === 0 ? "Nothing to practice. This program is already a value." : `Done. Score ${state.score} / ${total}.`}</p>
-				<p className="practice-score" aria-live="polite">
-					{total === 0 ? "Nothing to practice. This program is already a value." : `Score ${state.score} / ${total}.`}
-				</p>
-				<button type="button" className="practice-next" onClick={() => dispatch({ type: "reset" })}>
+				<p className="practice-ask">{total === 0 ? emptyMessage : `Done. Score ${state.score} / ${total}.`}</p>
+				<ExprView
+					frame={frame}
+					nextPath={undefined}
+					nextRule={undefined}
+					stuckPath={outcome.tag === "stuck" ? outcome.path : undefined}
+					stuckReason={outcome.tag === "stuck" ? outcome.reason : undefined}
+					limitKind={outcome.tag === "limit" ? outcome.kind : undefined}
+				/>
+				{outcome.tag === "stuck" && <p className="practice-score">Stopped at path {outcome.path.length === 0 ? "root" : outcome.path.join(".")}.</p>}
+				<p className="practice-score" aria-live="polite">Score {state.score} / {total}.</p>
+				{total > 0 && <button type="button" className="practice-next" onClick={() => dispatch({ type: "reset" })}>
 					Practice again
-				</button>
+				</button>}
 			</section>
 		);
 	}
 
+	const frame = frameAtExpr(steps, start, state.index);
+	const step = steps[state.index];
+	if (!supportsInteractiveRendering(frame)) {
+		return (
+			<section className="practice" aria-label="Practice display limit">
+				<p className="practice-ask" role="status">This expression is too deeply nested for interactive practice. Use Watch to inspect its plain-text trace.</p>
+				<ExprView frame={frame} nextPath={undefined} nextRule={undefined} stuckPath={undefined} stuckReason={undefined} limitKind={undefined} showNote={false} />
+			</section>
+		);
+	}
+
+	let hint: string | undefined;
+	if (state.phase === "wrong") {
+		if (pathWithinLam(frame, state.clicked)) hint = "Code inside a lambda runs only after the lambda gets an argument.";
+		else if (state.clicked.length < step.path.length && state.clicked.every((n, i) => n === step.path[i])) hint = "This part runs, but something inside it runs first.";
+		else hint = RULE_TEXT[step.rule] ?? `${step.rule} runs here.`;
+	}
 	return (
 		<div className="practice">
 			<p className="practice-ask">Which part runs next?</p>
 			<ExprView
-				frame={frame ?? start}
-				nextPath={state.phase === "wrong" ? step?.path : undefined}
+				frame={frame}
+				nextPath={state.phase === "wrong" ? step.path : undefined}
 				nextRule={undefined}
 				stuckPath={undefined}
 				stuckReason={undefined}
+				limitKind={undefined}
+				showNote={false}
 				pick={state.phase === "ask" ? pick : undefined}
 				wrongPath={state.phase === "wrong" ? state.clicked : undefined}
 			/>
 			<p className="practice-score" aria-live="polite">
-				{state.phase === "ask" && `Step ${state.index + 1} of ${total} · score ${state.score} / ${state.index + (state.phase === "ask" ? 1 : 0)}`}
-				{state.phase === "right" && <span className="right">Right, {steps[state.index].rule} runs first · score {state.score} / {state.index + 1}</span>}
-				{state.phase === "wrong" && (
-					<span className="wrong">
-						Not this one. {hint} · score {state.score} / {state.index + 1}
-					</span>
-				)}
+				{state.phase === "ask" && `Step ${state.index + 1} of ${total} · score ${state.score} / ${state.index + 1}`}
+				{state.phase === "right" && <span className="right">Right, {step.rule} runs first · score {state.score} / {state.index + 1}</span>}
+				{state.phase === "wrong" && <span className="wrong">Not this one. {hint} · score {state.score} / {state.index + 1}</span>}
 			</p>
 			{state.phase !== "ask" && (
 				<button type="button" className="practice-next" onClick={() => dispatch({ type: "next" })}>
