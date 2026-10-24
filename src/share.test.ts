@@ -5,10 +5,16 @@ import { decodeProgram, embedSnippet, encodeProgram, readHash, shareHref } from 
 describe("share", () => {
 	it("round-trips any program through the hash code", () => {
 		fc.assert(
-			fc.property(fc.string(), (program) => {
+			fc.property(fc.string({ maxLength: 4000 }), (program) => {
 				expect(decodeProgram(encodeProgram(program))).toBe(program);
 			}),
 		);
+	});
+
+	it("round-trips a 2,000 character program", () => {
+		const program = "map (\\x -> x * 2) [1, 2, 3] ".repeat(80).slice(0, 2000);
+		expect(program).toHaveLength(2000);
+		expect(decodeProgram(encodeProgram(program))).toBe(program);
 	});
 
 	it("round-trips the empty program", () => {
