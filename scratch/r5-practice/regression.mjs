@@ -54,7 +54,7 @@ try {
 	assert.match(await text(), /Right, arith runs first · score 2 \/ 2/);
 	assert.equal(await page.locator(".practice-next").innerText(), "See score");
 	await noFalseValue();
-	await page.screenshot({ path: "/workspace/scratch/redex-audit/r5-final-feedback.png" });
+	if (process.env.REDEX_BROWSER_SCREENSHOT) await page.screenshot({ path: process.env.REDEX_BROWSER_SCREENSHOT });
 	await record("pointer answer and final Space answer hold feedback");
 	await next();
 	assert.match(await text(), /Done. Score 2 \/ 2/);
