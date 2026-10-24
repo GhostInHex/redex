@@ -22,28 +22,62 @@ const src = (source: string): Expr => {
 	return result.expr;
 };
 
-const CHILD_KEYS: { readonly [T in Expr["tag"]]: readonly string[] } = {
-	num: [], bool: [], var: [], builtin: [],
-	lam: ["body"],
-	app: ["fn", "arg"],
-	binop: ["left", "right"],
-	cons: ["head", "tail"],
-	if: ["cond", "then", "else"],
-	let: ["value", "body"],
-	list: [],
+const children = (e: Expr): readonly Expr[] => {
+	switch (e.tag) {
+		case "num":
+		case "bool":
+		case "var":
+		case "builtin":
+			return [];
+		case "lam":
+			return [e.body];
+		case "app":
+			return [e.fn, e.arg];
+		case "binop":
+			return [e.left, e.right];
+		case "cons":
+			return [e.head, e.tail];
+		case "if":
+			return [e.cond, e.then, e.else];
+		case "let":
+			return [e.value, e.body];
+		case "list":
+			return e.items;
+	}
 };
 
-const child = (e: Expr, i: number): Expr | undefined =>
-	e.tag === "list" ? e.items[i] : (e as unknown as Record<string, Expr | undefined>)[CHILD_KEYS[e.tag][i]];
+const rebuilt = (e: Expr, kids: readonly Expr[]): Expr => {
+	switch (e.tag) {
+		case "num":
+		case "bool":
+		case "var":
+		case "builtin":
+			return e;
+		case "lam":
+			return { ...e, body: kids[0] };
+		case "app":
+			return { ...e, fn: kids[0], arg: kids[1] };
+		case "binop":
+			return { ...e, left: kids[0], right: kids[1] };
+		case "cons":
+			return { ...e, head: kids[0], tail: kids[1] };
+		case "if":
+			return { ...e, cond: kids[0], then: kids[1], else: kids[2] };
+		case "let":
+			return { ...e, value: kids[0], body: kids[1] };
+		case "list":
+			return { ...e, items: kids };
+	}
+};
 
 const at = (e: Expr, path: Path): Expr | undefined =>
-	path.reduce<Expr | undefined>((node, i) => node && child(node, i), e);
+	path.reduce<Expr | undefined>((node, i) => node && children(node)[i], e);
 
 const replaced = (e: Expr, path: Path, sub: Expr): Expr => {
 	if (path.length === 0) return sub;
 	const [i, ...rest] = path;
-	const next = replaced(child(e, i)!, rest, sub);
-	return e.tag === "list" ? { ...e, items: e.items.with(i, next) } : ({ ...e, [CHILD_KEYS[e.tag][i]]: next } as Expr);
+	const kids = children(e);
+	return rebuilt(e, kids.with(i, replaced(kids[i], rest, sub)));
 };
 
 const rewrites = (before: Expr, rule: Rule, path: Path, after: Expr): StepResult => ({
@@ -372,7 +406,7 @@ describe("path property", () => {
 		);
 	});
 
-	it("holds for steps reached by enough programs to cover every rule", () => {
+	it("draws programs that reach every rule, so the path property covers each one", () => {
 		const seen = new Set<Rule>();
 		fc.assert(
 			fc.property(program, (start) => {
