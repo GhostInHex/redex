@@ -230,7 +230,6 @@ const fresh = (name: string, taken: ReadonlySet<string>): string => (taken.has(n
 const substitute = (body: Expr, name: string, value: Expr): Expr => {
 	const free = freeVars(value);
 
-	// Only an open program substitutes a value with a free variable. Renaming the binder keeps that variable free, so it still reports as unbound.
 	const bind = (param: string, scope: Expr): readonly [string, Expr] => {
 		if (param === name) return [param, scope];
 		if (!free.has(param) || !freeVars(scope).has(name)) return [param, go(scope)];
