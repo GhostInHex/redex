@@ -200,6 +200,13 @@ describe("arithmetic", () => {
 		expect(value("7 % (-3)")).toEqual(num(-2));
 	});
 
+	it("divides exactly at the edge of the safe integer range", () => {
+		expect(value("9007199254740991 / (-3)")).toEqual(num(-3002399751580331));
+		expect(value("(-9007199254740991) / 3")).toEqual(num(-3002399751580331));
+		expect(value("(-9007199254740991) / (-1)")).toEqual(num(9007199254740991));
+		expect(value("9007199254740991 % (-3)")).toEqual(num(-2));
+	});
+
 	it("produces negative numbers and never negative zero", () => {
 		expect(value("1 - 3")).toEqual(num(-2));
 		expect(Object.is((value("0 * (-1)") as { value: number }).value, 0)).toBe(true);

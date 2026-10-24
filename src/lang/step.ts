@@ -158,6 +158,11 @@ const floorMod = (a: number, b: number): number => {
 	return r !== 0 && r < 0 !== b < 0 ? r + b : r;
 };
 
+const floorDiv = (a: number, b: number): number => {
+	const q = BigInt(a) / BigInt(b);
+	return Number(floorMod(a, b) !== a % b ? q - 1n : q);
+};
+
 type Numeric = (a: number, b: number) => Found;
 
 const arith =
@@ -191,7 +196,7 @@ const OPS: Readonly<Record<Op, (left: Expr, right: Expr) => Found>> = {
 	"+": numeric("+", arith((a, b) => a + b)),
 	"-": numeric("-", arith((a, b) => a - b)),
 	"*": numeric("*", arith((a, b) => a * b)),
-	"/": numeric("/", division((a, b) => (a - floorMod(a, b)) / b)),
+	"/": numeric("/", division(floorDiv)),
 	"%": numeric("%", division(floorMod)),
 	"==": equals,
 	"<": numeric("<", compare((a, b) => a < b)),
