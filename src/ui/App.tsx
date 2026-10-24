@@ -9,6 +9,7 @@ import Embed from "./Embed.tsx";
 import Examples from "./Examples.tsx";
 import ExprView from "./ExprView.tsx";
 import Timeline from "./Timeline.tsx";
+import Practice from "./Practice.tsx";
 import { frameAt, initialStepper, stepper, type RunSource, type StepperState } from "./stepper.ts";
 
 const runSource: RunSource = (source) => {
@@ -119,12 +120,15 @@ export default function App() {
 		(start: StepperState): StepperState =>
 			entry.shared || EMBED ? stepper(start, { type: "run", source: entry.source }, runSource) : start,
 	);
+	const [mode, setMode] = useState<"watch" | "practice">("watch");
 	const [parseError, setParseError] = useState<ParseError | undefined>(undefined);
 	const [editorEpoch, setEditorEpoch] = useState(0);
 	const [shareOpen, setShareOpen] = useState(false);
 	const [copied, setCopied] = useState<"" | "link" | "embed">("");
 	const timer = useRef<number | undefined>(undefined);
 
+	const setWatch = useCallback(() => setMode("watch"), []);
+	const setPractice = useCallback(() => setMode("practice"), []);
 	const run = useCallback(() => {
 		dispatch({ type: "run", source });
 	}, [source]);
@@ -192,7 +196,9 @@ export default function App() {
 	const stuck = ready && state.index === state.trace.steps.length && state.trace.outcome.tag === "stuck" ? state.trace.outcome : undefined;
 
 	const stepperView =
-		ready && frame ? (
+		mode === "practice" && ready ? (
+			<Practice steps={state.trace.steps} start={state.trace.start} />
+		) : ready && frame ? (
 			<>
 				<ExprView
 					frame={frame}
@@ -219,6 +225,14 @@ export default function App() {
 			<Embed program={source}>
 				{entry.notice && <p className="error">{entry.notice}</p>}
 				{state.status === "error" && <p className="error">{state.error}</p>}
+				<div className="mode-toggle" role="group" aria-label="Playback mode">
+					<button type="button" className={mode === "watch" ? "mode on" : "mode"} aria-pressed={mode === "watch"} onClick={setWatch}>
+						Watch
+					</button>
+					<button type="button" className={mode === "practice" ? "mode on" : "mode"} aria-pressed={mode === "practice"} onClick={setPractice}>
+						Practice
+					</button>
+				</div>
 				{stepperView}
 			</Embed>
 		);
@@ -231,6 +245,14 @@ export default function App() {
 				<button type="button" className="run" onClick={run}>
 					Run
 				</button>
+				<div className="mode-toggle" role="group" aria-label="Playback mode">
+					<button type="button" className={mode === "watch" ? "mode on" : "mode"} aria-pressed={mode === "watch"} onClick={setWatch}>
+						Watch
+					</button>
+					<button type="button" className={mode === "practice" ? "mode on" : "mode"} aria-pressed={mode === "practice"} onClick={setPractice}>
+						Practice
+					</button>
+				</div>
 				<Examples onPick={pick} />
 				<button
 					type="button"
