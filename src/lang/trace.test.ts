@@ -91,6 +91,12 @@ describe("node limit", () => {
 		expect(t.steps.every((s) => size(s.after) <= 5000)).toBe(true);
 	});
 
+	it("stops a program that starts over the limit, even when it is already a value", () => {
+		const big = src(`[${Array.from({ length: 5000 }, () => "0").join(", ")}]`);
+		expect(size(big)).toBe(5001);
+		expect(trace(big)).toEqual({ start: big, steps: [], outcome: { tag: "limit", kind: "nodes" } });
+	});
+
 	it("stops before the step that would cross the limit", () => {
 		const t = trace(src("map (\\x -> x) [1, 2, 3]"), { steps: 1000, nodes: 9 });
 		expect(t).toEqual({ start: src("map (\\x -> x) [1, 2, 3]"), steps: [], outcome: { tag: "limit", kind: "nodes" } });

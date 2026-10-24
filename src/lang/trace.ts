@@ -10,6 +10,7 @@ export const size = (e: Expr): number => childrenOf(e).reduce((n, child) => n + 
 export function trace(start: Expr, limits: Limits = LIMITS): Trace {
 	const steps: Step[] = [];
 	const finish = (outcome: Outcome): Trace => ({ start, steps, outcome });
+	if (size(start) > limits.nodes) return finish({ tag: "limit", kind: "nodes" });
 	for (let current = start; ; ) {
 		const result = step(current);
 		if (result.tag === "value") return finish({ tag: "value", value: current });
