@@ -29,6 +29,7 @@ function parseTokens(tokens: readonly Token[]): Expr {
 	let i = 0;
 	let depth = 0;
 	const open: Token[] = [];
+	const heights = new Map<Expr, number>();
 	const peek = () => tokens[i];
 
 	const fail = (at: Token, message: string): never => {
@@ -52,16 +53,18 @@ function parseTokens(tokens: readonly Token[]): Expr {
 		if (!eat(text)) fail(peek(), `expected "${text}"`);
 	};
 
-	const deeper = () => {
+	const nested = (parseInner: () => Expr): Expr => {
 		if (++depth > MAX_DEPTH) fail(peek(), "expression is nested too deeply");
+		const result = parseInner();
+		depth--;
+		return result;
 	};
 
-	const nested = (parseInner: () => Expr): Expr => {
-		const outer = depth;
-		deeper();
-		const result = parseInner();
-		depth = outer;
-		return result;
+	const node = (e: Expr, children: readonly Expr[]): Expr => {
+		const height = 1 + children.reduce((max, child) => Math.max(max, heights.get(child) ?? 1), 0);
+		if (height > MAX_DEPTH) fail(peek(), "expression is nested too deeply");
+		heights.set(e, height);
+		return e;
 	};
 
 	const bracketed = (opener: Token, closer: ")" | "]", parseInner: () => Expr): Expr => {
@@ -101,23 +104,22 @@ function parseTokens(tokens: readonly Token[]): Expr {
 				expect("=");
 				const value = expr();
 				expect("in");
-				return { tag: "let", name: bound, value, body: expr() };
+				const body = expr();
+				return node({ tag: "let", name: bound, value, body }, [value, body]);
 			}
 			if (eat("\\")) {
 				const params = [name()];
-				while (peek().kind === "ident") {
-					deeper();
-					params.push(name());
-				}
+				while (peek().kind === "ident") params.push(name());
 				expect("->");
-				return params.reduceRight<Expr>((body, param) => ({ tag: "lam", param, body }), expr());
+				return params.reduceRight((body, param) => node({ tag: "lam", param, body }, [body]), expr());
 			}
 			if (eat("if")) {
 				const cond = expr();
 				expect("then");
 				const then = expr();
 				expect("else");
-				return { tag: "if", cond, then, else: expr() };
+				const otherwise = expr();
+				return node({ tag: "if", cond, then, else: otherwise }, [cond, then, otherwise]);
 			}
 			return cmp();
 		});
@@ -129,34 +131,29 @@ function parseTokens(tokens: readonly Token[]): Expr {
 		i++;
 		const right = cons();
 		if (opAt("cmp")) fail(peek(), "comparisons cannot be chained");
-		return { tag: "binop", op, left, right };
+		return node({ tag: "binop", op, left, right }, [left, right]);
 	};
 
 	const cons = (): Expr => {
 		const head = add();
-		return eat(":") ? { tag: "cons", head, tail: nested(cons) } : head;
+		if (!eat(":")) return head;
+		const tail = nested(cons);
+		return node({ tag: "cons", head, tail }, [head, tail]);
 	};
 
 	const leftAssoc = (tier: Tier, operand: () => Expr) => (): Expr => {
-		const outer = depth;
 		let left = operand();
 		for (let op = opAt(tier); op; op = opAt(tier)) {
 			i++;
-			deeper();
-			left = { tag: "binop", op, left, right: operand() };
+			const right = operand();
+			left = node({ tag: "binop", op, left, right }, [left, right]);
 		}
-		depth = outer;
 		return left;
 	};
 
 	const app = (): Expr => {
-		const outer = depth;
 		let fn = atom();
-		for (let arg = tryAtom(); arg; arg = tryAtom()) {
-			deeper();
-			fn = { tag: "app", fn, arg };
-		}
-		depth = outer;
+		for (let arg = tryAtom(); arg; arg = tryAtom()) fn = node({ tag: "app", fn, arg }, [fn, arg]);
 		return fn;
 	};
 
@@ -203,7 +200,7 @@ function parseTokens(tokens: readonly Token[]): Expr {
 							do items.push(expr());
 							while (eat(","));
 						}
-						return { tag: "list", items };
+						return node({ tag: "list", items }, items);
 					});
 				}
 				return undefined;
@@ -212,14 +209,16 @@ function parseTokens(tokens: readonly Token[]): Expr {
 		}
 	};
 
+	const section = (op: Op): Expr => {
+		const left: Expr = { tag: "var", name: "a" };
+		const right: Expr = { tag: "var", name: "b" };
+		const body = node({ tag: "binop", op, left, right }, [left, right]);
+		const inner = node({ tag: "lam", param: "b", body }, [body]);
+		return node({ tag: "lam", param: "a", body: inner }, [inner]);
+	};
+
 	const program = expr();
 	const rest = peek();
 	if (rest.kind !== "eof") fail(rest, `unexpected "${rest.text}"`);
 	return program;
 }
-
-const section = (op: Op): Expr => ({
-	tag: "lam",
-	param: "a",
-	body: { tag: "lam", param: "b", body: { tag: "binop", op, left: { tag: "var", name: "a" }, right: { tag: "var", name: "b" } } },
-});

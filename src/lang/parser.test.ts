@@ -137,6 +137,13 @@ describe("errors", () => {
 		expect(parse(`\\${Array(20000).fill("x").join(" ")} -> x`).ok).toBe(false);
 	});
 
+	it("bounds the tree height when a chain starts with a nested operand", () => {
+		let source = "1";
+		for (let n = 0; n < 45; n++) source = `(${source})` + " + 1".repeat(400);
+		expect(parse(source)).toEqual(err(1, 2050, "expression is nested too deeply"));
+		expect(parse(`(${Array(300).fill("f").join(" ")})` + " x".repeat(300)).ok).toBe(false);
+	});
+
 	it("anything under the depth limit parses and prints", () => {
 		const sources = [
 			"(".repeat(400) + "1" + ")".repeat(400),
@@ -169,6 +176,13 @@ describe("errors", () => {
 });
 
 describe("print", () => {
+	it("prints a tree of any height", () => {
+		const height = 100000;
+		let tree: Expr = num(1);
+		for (let n = 0; n < height; n++) tree = { tag: "list", items: [tree] };
+		expect(print(tree)).toBe("[".repeat(height) + "1" + "]".repeat(height));
+	});
+
 	it("adds parentheses only where precedence needs them", () => {
 		const cases = [
 			"1 + 2 * 3",

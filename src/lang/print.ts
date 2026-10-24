@@ -32,24 +32,32 @@ const levelOf = (e: Expr): Level => {
 	}
 };
 
+type Part = string | readonly [Expr, Level];
+
 export function print(expr: Expr): string {
-	return at(expr, Level.Expr);
+	const out: string[] = [];
+	const todo: Part[] = [[expr, Level.Expr]];
+	for (let part = todo.pop(); part !== undefined; part = todo.pop()) {
+		if (typeof part === "string") {
+			out.push(part);
+			continue;
+		}
+		const [e, min] = part;
+		const parts = levelOf(e) < min ? ["(", ...bare(e), ")"] : bare(e);
+		for (let n = parts.length - 1; n >= 0; n--) todo.push(parts[n]);
+	}
+	return out.join("");
 }
 
-const at = (e: Expr, min: Level): string => {
-	const text = bare(e);
-	return levelOf(e) < min ? `(${text})` : text;
-};
-
-const bare = (e: Expr): string => {
+const bare = (e: Expr): readonly Part[] => {
 	switch (e.tag) {
 		case "num":
-			return e.value < 0 ? `(-${-e.value})` : String(e.value);
+			return [e.value < 0 ? `(-${-e.value})` : String(e.value)];
 		case "bool":
-			return e.value ? "True" : "False";
+			return [e.value ? "True" : "False"];
 		case "var":
 		case "builtin":
-			return e.name;
+			return [e.name];
 		case "lam": {
 			const params = [e.param];
 			let body = e.body;
@@ -57,21 +65,21 @@ const bare = (e: Expr): string => {
 				params.push(body.param);
 				body = body.body;
 			}
-			return `\\${params.join(" ")} -> ${at(body, Level.Expr)}`;
+			return [`\\${params.join(" ")} -> `, [body, Level.Expr]];
 		}
 		case "app":
-			return `${at(e.fn, Level.App)} ${at(e.arg, Level.Atom)}`;
+			return [[e.fn, Level.App], " ", [e.arg, Level.Atom]];
 		case "binop": {
 			const [left, right] = OPERAND_LEVELS[OP_TIER[e.op]];
-			return `${at(e.left, left)} ${e.op} ${at(e.right, right)}`;
+			return [[e.left, left], ` ${e.op} `, [e.right, right]];
 		}
 		case "cons":
-			return `${at(e.head, Level.Add)} : ${at(e.tail, Level.Cons)}`;
+			return [[e.head, Level.Add], " : ", [e.tail, Level.Cons]];
 		case "if":
-			return `if ${at(e.cond, Level.Expr)} then ${at(e.then, Level.Expr)} else ${at(e.else, Level.Expr)}`;
+			return ["if ", [e.cond, Level.Expr], " then ", [e.then, Level.Expr], " else ", [e.else, Level.Expr]];
 		case "let":
-			return `let ${e.name} = ${at(e.value, Level.Expr)} in ${at(e.body, Level.Expr)}`;
+			return [`let ${e.name} = `, [e.value, Level.Expr], " in ", [e.body, Level.Expr]];
 		case "list":
-			return `[${e.items.map((item) => at(item, Level.Expr)).join(", ")}]`;
+			return ["[", ...e.items.flatMap((item, n): Part[] => (n === 0 ? [[item, Level.Expr]] : [", ", [item, Level.Expr]])), "]"];
 	}
 };
