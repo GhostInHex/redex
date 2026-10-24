@@ -1,5 +1,7 @@
 import { motion } from "framer-motion";
 import type { Expr, Path } from "../lang/ast.ts";
+import { print } from "../lang/print.ts";
+import { supportsInteractiveRendering } from "./interactiveRendering.ts";
 
 type Props = {
 	readonly frame: Expr;
@@ -67,12 +69,14 @@ const levelOf = (e: Expr): Level => {
 };
 
 export default function ExprView({ frame, nextPath, nextRule, stuckPath, stuckReason, limitKind }: Props) {
+	const interactive = supportsInteractiveRendering(frame);
 	const lit = (path: readonly number[]) => (nextPath !== undefined && same(path, nextPath)) || (stuckPath !== undefined && same(path, stuckPath));
 	return (
 		<section className="expr" aria-label="Current expression">
 			<motion.div layout className="expr-line" transition={MOTION}>
-				<Node expr={frame} path={[]} lit={lit} minLevel={Level.Expr} />
+				{interactive ? <Node expr={frame} path={[]} lit={lit} minLevel={Level.Expr} /> : <span className="expr-plain">{print(frame)}</span>}
 			</motion.div>
+			{!interactive && <p className="expr-display-note">Expression is too deeply nested for interactive display. Showing plain text.</p>}
 			<p className="expr-note">
 				{stuckReason ? (
 					<span className="stuck">{stuckReason}</span>
