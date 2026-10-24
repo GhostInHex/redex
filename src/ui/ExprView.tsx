@@ -68,6 +68,7 @@ function Node({ expr, path, lit, pick, wrongPath }: NodeProps) {
 	return (
 		<span
 			className="pick"
+			data-path={path.length === 0 ? "root" : path.join(".")}
 			role="button"
 			tabIndex={0}
 			onClick={(event) => {

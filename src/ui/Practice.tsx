@@ -28,6 +28,39 @@ const RULE_TEXT: Readonly<Record<string, string>> = {
 const frameAtExpr = (steps: readonly Step[], start: Expr, index: number): Expr =>
 	steps.slice(0, index).reduce<Expr>((_, step) => step.after, start);
 
+const childrenOfExpr = (e: Expr): readonly Expr[] => {
+	switch (e.tag) {
+		case "num":
+		case "bool":
+		case "var":
+		case "builtin":
+			return [];
+		case "lam":
+			return [e.body];
+		case "app":
+			return [e.fn, e.arg];
+		case "binop":
+			return [e.left, e.right];
+		case "cons":
+			return [e.head, e.tail];
+		case "if":
+			return [e.cond, e.then, e.else];
+		case "let":
+			return [e.value, e.body];
+		case "list":
+			return e.items;
+	}
+};
+
+const pathWithinLam = (expr: Expr, path: Path): boolean => {
+	let node: Expr | undefined = expr;
+	for (let i = 0; i < path.length; i++) {
+		if (!node || node.tag === "lam") return true;
+		node = childrenOfExpr(node)[path[i]];
+	}
+	return false;
+};
+
 export default function Practice({ steps, start }: Props) {
 	const [state, dispatch] = useReducer(
 		(state: PracticeState, event: Parameters<typeof practice>[1]) => practice(state, event, steps),
@@ -64,7 +97,7 @@ export default function Practice({ steps, start }: Props) {
 	const hint = useMemo(() => {
 		if (!step) return undefined;
 		if (state.phase === "wrong") {
-			const clickedInsideLam = walkToLam(frameAtExpr(steps, start, state.index), state.clicked);
+			const clickedInsideLam = pathWithinLam(frameAtExpr(steps, start, state.index), state.clicked);
 			if (clickedInsideLam) return "Code inside a lambda runs only after the lambda gets an argument.";
 			if (state.clicked.length < step.path.length && state.clicked.every((n, i) => n === step.path[i])) return "This part runs, but something inside it runs first.";
 			return RULE_TEXT[step.rule] ?? `${step.rule} runs here.`;
@@ -75,8 +108,9 @@ export default function Practice({ steps, start }: Props) {
 	if (state.phase === "done") {
 		return (
 			<section className="practice" aria-label="Practice result">
-				<p className="practice-ask">
-					{total === 0 ? "Nothing to practice. This program is already a value." : `Done. Score ${state.score} / ${total}.`}
+				<p className="practice-ask">{total === 0 ? "Nothing to practice. This program is already a value." : `Done. Score ${state.score} / ${total}.`}</p>
+				<p className="practice-score" aria-live="polite">
+					{total === 0 ? "Nothing to practice. This program is already a value." : `Score ${state.score} / ${total}.`}
 				</p>
 				<button type="button" className="practice-next" onClick={() => dispatch({ type: "reset" })}>
 					Practice again
@@ -113,40 +147,4 @@ export default function Practice({ steps, start }: Props) {
 			)}
 		</div>
 	);
-}
-
-function walkToLam(expr: Expr, path: Path): boolean {
-	let node: Expr = expr;
-	for (let i = 0; i < path.length; i++) {
-		if (node.tag === "lam") return true;
-		const children = childrenOfExpr(node);
-		const next = children[path[i]];
-		if (!next) return false;
-		node = next;
-	}
-	return node.tag === "lam";
-}
-
-function childrenOfExpr(e: Expr): readonly Expr[] {
-	switch (e.tag) {
-		case "num":
-		case "bool":
-		case "var":
-		case "builtin":
-			return [];
-		case "lam":
-			return [e.body];
-		case "app":
-			return [e.fn, e.arg];
-		case "binop":
-			return [e.left, e.right];
-		case "cons":
-			return [e.head, e.tail];
-		case "if":
-			return [e.cond, e.then, e.else];
-		case "let":
-			return [e.value, e.body];
-		case "list":
-			return e.items;
-	}
 }
