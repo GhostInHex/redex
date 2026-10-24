@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { EXAMPLES } from "../lang/examples.ts";
 
 type Props = {
@@ -10,12 +10,10 @@ const wrap: CSSProperties = {
 };
 
 const panel: CSSProperties = {
-	position: "absolute",
-	top: "calc(100% + 8px)",
-	left: 0,
+	position: "fixed",
+	boxSizing: "border-box",
 	zIndex: 20,
 	width: "min(560px, calc(100vw - 32px))",
-	maxHeight: "min(70vh, 560px)",
 	overflowY: "auto",
 	margin: 0,
 	padding: "8px 0",
@@ -31,6 +29,7 @@ const item: CSSProperties = {
 	flexDirection: "column",
 	gap: 2,
 	width: "100%",
+	boxSizing: "border-box",
 	padding: "8px 14px",
 	border: 0,
 	borderRadius: 0,
@@ -47,6 +46,31 @@ const lesson: CSSProperties = {
 export default function Examples({ onPick }: Props) {
 	const [open, setOpen] = useState(false);
 	const wrapRef = useRef<HTMLDivElement>(null);
+	const triggerRef = useRef<HTMLButtonElement>(null);
+	const [position, setPosition] = useState({ left: 16, top: 0, maxHeight: 0 });
+
+	useLayoutEffect(() => {
+		if (!open) return;
+		const place = () => {
+			const trigger = triggerRef.current;
+			if (!trigger) return;
+			const bounds = trigger.getBoundingClientRect();
+			const width = Math.min(560, window.innerWidth - 32);
+			const top = Math.max(16, Math.min(bounds.bottom + 8, window.innerHeight - 16));
+			setPosition({
+				left: Math.max(16, Math.min(bounds.left, window.innerWidth - width - 16)),
+				top,
+				maxHeight: Math.max(0, Math.min(560, window.innerHeight * 0.7, window.innerHeight - top - 16)),
+			});
+		};
+		place();
+		window.addEventListener("resize", place);
+		window.addEventListener("scroll", place, true);
+		return () => {
+			window.removeEventListener("resize", place);
+			window.removeEventListener("scroll", place, true);
+		};
+	}, [open]);
 
 	useEffect(() => {
 		if (!open) return;
@@ -66,11 +90,11 @@ export default function Examples({ onPick }: Props) {
 
 	return (
 		<div ref={wrapRef} style={wrap}>
-			<button type="button" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((value) => !value)}>
+			<button ref={triggerRef} type="button" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((value) => !value)}>
 				Examples
 			</button>
 			{open && (
-				<ol style={panel} role="menu" aria-label="Lesson examples">
+				<ol style={{ ...panel, ...position }} role="menu" aria-label="Lesson examples">
 					{EXAMPLES.map((example) => (
 						<li key={example.id} role="none">
 							<button
