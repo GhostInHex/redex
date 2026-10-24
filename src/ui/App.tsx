@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from "react";
+﻿import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from "react";
 import type { ParseError } from "../lang/ast.ts";
 import { parse } from "../lang/parser.ts";
 import { trace } from "../lang/trace.ts";
@@ -120,6 +120,7 @@ export default function App() {
 			entry.shared || EMBED ? stepper(start, { type: "run", source: entry.source }, runSource) : start,
 	);
 	const [parseError, setParseError] = useState<ParseError | undefined>(undefined);
+	const [editorEpoch, setEditorEpoch] = useState(0);
 	const runPendingTime = useRef<number | null>(null);
 	const [shareOpen, setShareOpen] = useState(false);
 	const [copied, setCopied] = useState<"" | "link" | "embed">("");
@@ -156,6 +157,7 @@ export default function App() {
 
 	const pick = useCallback((next: string) => {
 		setSource(next);
+		setEditorEpoch((epoch) => epoch + 1);
 		dispatch({ type: "run", source: next });
 	}, []);
 
@@ -270,7 +272,7 @@ export default function App() {
 				</button>
 			</header>
 			{entry.notice && <p className="notice">{entry.notice}</p>}
-			<Editor source={source} errorLine={parseError?.line} errorCol={parseError?.col} onChange={onSourceChange} />
+			<Editor key={editorEpoch} source={source} errorLine={parseError?.line} errorCol={parseError?.col} onChange={onSourceChange} />
 			{state.status !== "error" && parseError && <p className="error">{parseError.message}</p>}
 			{state.status === "error" && <p className="error">{state.error}</p>}
 			{stepperView}
