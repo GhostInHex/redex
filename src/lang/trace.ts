@@ -5,7 +5,16 @@ export type Limits = { readonly steps: number; readonly nodes: number };
 
 export const LIMITS: Limits = { steps: 1000, nodes: 5000 };
 
-export const size = (e: Expr): number => childrenOf(e).reduce((n, child) => n + size(child), 1);
+export const size = (e: Expr): number => {
+	let nodes = 0;
+	const todo: Expr[] = [e];
+	while (todo.length > 0) {
+		const current = todo.pop()!;
+		nodes++;
+		for (const child of childrenOf(current)) todo.push(child);
+	}
+	return nodes;
+};
 
 export function trace(start: Expr, limits: Limits = LIMITS): Trace {
 	const steps: Step[] = [];
