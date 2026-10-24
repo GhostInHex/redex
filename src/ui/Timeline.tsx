@@ -1,4 +1,4 @@
-﻿import { useEffect } from "react";
+import { useEffect } from "react";
 
 type Props = {
 	readonly index: number;
@@ -14,6 +14,8 @@ type Props = {
 export default function Timeline({ index, last, playing, onBack, onNext, onSeek, onPlay, onPause }: Props) {
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
+			const target = event.target as HTMLElement | null;
+			if (target?.closest(".cm-editor, input, textarea")) return;
 			if (event.key === "ArrowRight") {
 				event.preventDefault();
 				onNext();

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import type { ParseError } from "../lang/ast.ts";
 import { parse } from "../lang/parser.ts";
 import { trace } from "../lang/trace.ts";
@@ -21,17 +21,36 @@ export default function App() {
 	const [source, setSource] = useState(() => EXAMPLES.find((example) => example.id === "sum-of-squares")!.source);
 	const [state, dispatch] = useReducer(reduce, initialStepper);
 	const [parseError, setParseError] = useState<ParseError | undefined>(undefined);
+	const runPendingTime = useRef<number | null>(null);
+
+	const onSourceChange = useCallback((nextSource: string) => {
+		setSource(nextSource);
+		dispatch({ type: "edit" });
+		const parsed = parse(nextSource);
+		setParseError(parsed.ok ? undefined : parsed.error);
+	}, []);
 
 	const run = useCallback(() => {
+		runPendingTime.current = performance.now();
+		const parsed = parse(source);
+		if (!parsed.ok) {
+			setParseError(parsed.error);
+		} else {
+			setParseError(undefined);
+		}
 		dispatch({ type: "run", source });
 	}, [source]);
 
-	useEffect(() => {
-		if (state.status === "editing" || state.status === "error") {
-			const parsed = parse(source);
-			setParseError(parsed.ok ? undefined : parsed.error);
-		} else setParseError(undefined);
-	}, [source, state.status]);
+	useLayoutEffect(() => {
+		if (runPendingTime.current !== null && state.status === "ready") {
+			const t0 = runPendingTime.current;
+			runPendingTime.current = null;
+			requestAnimationFrame(() => {
+				const duration = performance.now() - t0;
+				console.log(`[redex] run-to-paint ${duration.toFixed(2)} ms`);
+			});
+		}
+	}, [state]);
 
 	useEffect(() => {
 		if (state.status !== "ready" || !state.playing) return;
@@ -46,6 +65,7 @@ export default function App() {
 	const frame = ready ? frameAt(state, state.index) : undefined;
 	const nextStep = ready && state.index < state.trace.steps.length ? state.trace.steps[state.index] : undefined;
 	const stuck = ready && state.index === state.trace.steps.length && state.trace.outcome.tag === "stuck" ? state.trace.outcome : undefined;
+	const limitKind = ready && state.index === state.trace.steps.length && state.trace.outcome.tag === "limit" ? state.trace.outcome.kind : undefined;
 
 	return (
 		<main className="app">
@@ -55,7 +75,7 @@ export default function App() {
 					Run
 				</button>
 			</header>
-			<Editor source={source} errorLine={parseError?.line} errorCol={parseError?.col} onChange={setSource} />
+			<Editor source={source} errorLine={parseError?.line} errorCol={parseError?.col} onChange={onSourceChange} />
 			{parseError && <p className="error">{parseError.message}</p>}
 			{ready && frame && (
 				<>
@@ -65,6 +85,7 @@ export default function App() {
 						nextRule={nextStep?.rule}
 						stuckPath={stuck?.path}
 						stuckReason={stuck?.reason}
+						limitKind={limitKind}
 					/>
 					<Timeline
 						index={index}
