@@ -256,6 +256,41 @@ describe("substitution", () => {
 		const result = step(src("(\\x -> \\y -> x) (\\z -> y)"));
 		expect(result.tag === "step" && result.step.after).toEqual(lam("y'", lam("z", v("y"))));
 	});
+
+	it("substitutes into nesting deeper than the parser allows", () => {
+		let body: Expr = v("x");
+		for (let i = 0; i < 4900; i++) body = list(body);
+		const result = step(app(lam("x", body), num(0)));
+		let node = result.tag === "step" ? result.step.after : undefined;
+		let depth = 0;
+		while (node && node.tag === "list") {
+			node = node.items[0];
+			depth++;
+		}
+		expect(node).toEqual(num(0));
+		expect(depth).toBe(4900);
+	});
+});
+
+describe("deep expressions", () => {
+	it("renames a binder whose body is nested deeper than the parser allows", () => {
+		let body: Expr = v("x");
+		for (let i = 0; i < 4900; i++) body = list(body);
+		const result = step(app(lam("x", lam("y", body)), lam("z", v("y"))));
+		expect(result.tag).toBe("step");
+		if (result.tag !== "step") return;
+		expect(result.step.after.tag).toBe("lam");
+		if (result.step.after.tag !== "lam") return;
+		expect(result.step.after.param).toBe("y'");
+		let node: Expr | undefined = result.step.after.body;
+		let depth = 0;
+		while (node && node.tag === "list") {
+			node = node.items[0];
+			depth++;
+		}
+		expect(node).toEqual(lam("z", v("y")));
+		expect(depth).toBe(4900);
+	});
 });
 
 const VARS = ["a", "b", "c"] as const;

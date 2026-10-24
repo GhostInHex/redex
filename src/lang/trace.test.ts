@@ -101,6 +101,13 @@ describe("node limit", () => {
 		const t = trace(src("map (\\x -> x) [1, 2, 3]"), { steps: 1000, nodes: 9 });
 		expect(t).toEqual({ start: src("map (\\x -> x) [1, 2, 3]"), steps: [], outcome: { tag: "limit", kind: "nodes" } });
 	});
+
+	it("sizes nesting deeper than the parser allows", () => {
+		let e: Expr = { tag: "num", value: 0 };
+		for (let i = 0; i < 4900; i++) e = { tag: "list", items: [e] };
+		expect(size(e)).toBe(4901);
+		expect(trace(e, { steps: 1000, nodes: 5000 })).toEqual({ start: e, steps: [], outcome: { tag: "value", value: e } });
+	});
 });
 
 describe("stuck reasons", () => {

@@ -82,39 +82,88 @@ const VALUE: Found = { tag: "value" };
 const rewrite = (rule: Rule, expr: Expr): Found => ({ tag: "rewrite", rule, trail: undefined, expr });
 const stuck = (reason: string): Found => ({ tag: "stuck", trail: undefined, reason });
 
-function find(e: Expr): Found {
+type FindFrame = { readonly e: Expr; readonly count: number; next: number };
+
+const searchCount = (e: Expr): number => {
+	switch (e.tag) {
+		case "num":
+		case "bool":
+		case "var":
+		case "builtin":
+		case "lam":
+			return 0;
+		case "if":
+		case "let":
+			return 1;
+		case "app":
+		case "binop":
+		case "cons":
+			return 2;
+		case "list":
+			return e.items.length;
+	}
+};
+
+const reduceAt = (e: Expr): Found => {
 	switch (e.tag) {
 		case "num":
 		case "bool":
 		case "builtin":
 		case "lam":
+		case "list":
 			return VALUE;
 		case "var":
 			return stuck(`unbound variable ${e.name}`);
-		case "list":
-			return firstInChildren(e, e.items.length) ?? VALUE;
 		case "app":
-			return firstInChildren(e, 2) ?? apply(e.fn, e.arg);
+			return apply(e.fn, e.arg);
 		case "binop":
-			return firstInChildren(e, 2) ?? OPS[e.op](e.left, e.right);
+			return OPS[e.op](e.left, e.right);
 		case "cons":
-			return firstInChildren(e, 2) ?? cons(e.head, e.tail);
+			return cons(e.head, e.tail);
 		case "if":
-			return firstInChildren(e, 1) ?? branch(e.cond, e.then, e.else);
+			return branch(e.cond, e.then, e.else);
 		case "let":
-			return firstInChildren(e, 1) ?? rewrite("let", substitute(e.body, e.name, e.value));
+			return rewrite("let", substitute(e.body, e.name, e.value));
+	}
+};
+
+function find(root: Expr): Found {
+	const stack: FindFrame[] = [];
+	let current: Expr | undefined = root;
+	let pending: Found | undefined;
+	for (;;) {
+		if (pending === undefined) {
+			const e: Expr = current!;
+			const count = searchCount(e);
+			if (count === 0) {
+				pending = reduceAt(e);
+				current = undefined;
+			} else {
+				stack.push({ e, count, next: 0 });
+				current = childrenOf(e)[0];
+			}
+			continue;
+		}
+		if (stack.length === 0) return pending;
+		const frame = stack.pop()!;
+		const index = frame.next;
+		if (pending.tag === "value") {
+			frame.next++;
+			if (frame.next < frame.count) {
+				stack.push(frame);
+				current = childrenOf(frame.e)[frame.next];
+				pending = undefined;
+			} else {
+				pending = reduceAt(frame.e);
+			}
+			continue;
+		}
+		pending =
+			pending.tag === "rewrite"
+				? { tag: "rewrite", rule: pending.rule, trail: { index, rest: pending.trail }, expr: withChild(frame.e, index, pending.expr) }
+				: { tag: "stuck", trail: { index, rest: pending.trail }, reason: pending.reason };
 	}
 }
-
-const firstInChildren = (e: Expr, count: number): Found | undefined => {
-	const children = childrenOf(e);
-	for (let i = 0; i < count; i++) {
-		const found = find(children[i]);
-		if (found.tag === "rewrite") return { ...found, trail: { index: i, rest: found.trail }, expr: withChild(e, i, found.expr) };
-		if (found.tag === "stuck") return { ...found, trail: { index: i, rest: found.trail } };
-	}
-	return undefined;
-};
 
 const num = (value: number): Expr => ({ tag: "num", value: value === 0 ? 0 : value });
 const bool = (value: boolean): Expr => ({ tag: "bool", value });
@@ -124,8 +173,15 @@ const call = (name: Builtin, ...args: readonly Expr[]): Expr => args.reduce(app,
 
 const ARITY: Readonly<Record<Builtin, number>> = { map: 2, filter: 2, foldl: 3, foldr: 3 };
 
-const spineOf = (fn: Expr, args: readonly Expr[]): { readonly head: Expr; readonly args: readonly Expr[] } =>
-	fn.tag === "app" ? spineOf(fn.fn, [fn.arg, ...args]) : { head: fn, args };
+const spineOf = (fn: Expr, args: readonly Expr[]): { readonly head: Expr; readonly args: readonly Expr[] } => {
+	let head = fn;
+	const spine = [...args];
+	while (head.tag === "app") {
+		spine.unshift(head.arg);
+		head = head.fn;
+	}
+	return { head, args: spine };
+};
 
 const kindOf = (e: Expr): string => (e.tag === "num" ? "a number" : e.tag === "bool" ? "a boolean" : "a list");
 
@@ -213,63 +269,179 @@ const branch = (cond: Expr, then: Expr, otherwise: Expr): Found => {
 const cons = (head: Expr, tail: Expr): Found =>
 	tail.tag === "list" ? rewrite("cons", list([head, ...tail.items])) : stuck(`":" needs a list on its right`);
 
-const EMPTY: ReadonlySet<string> = new Set();
 const union = (a: ReadonlySet<string>, b: ReadonlySet<string>): ReadonlySet<string> => new Set([...a, ...b]);
-const without = (a: ReadonlySet<string>, name: string): ReadonlySet<string> => new Set([...a].filter((n) => n !== name));
+
+type ScopeMark = { readonly name: string; readonly open: boolean };
 
 const freeVars = (e: Expr): ReadonlySet<string> => {
-	switch (e.tag) {
-		case "var":
-			return new Set([e.name]);
+	const free = new Set<string>();
+	const scopes = new Map<string, number>();
+	const todo: (Expr | ScopeMark)[] = [e];
+	while (todo.length > 0) {
+		const item = todo.pop()!;
+		if ("open" in item) {
+			const depth = scopes.get(item.name) ?? 0;
+			if (item.open) scopes.set(item.name, depth + 1);
+			else if (depth > 1) scopes.set(item.name, depth - 1);
+			else scopes.delete(item.name);
+			continue;
+		}
+		switch (item.tag) {
+			case "var":
+				if (!scopes.has(item.name)) free.add(item.name);
+				break;
+			case "lam":
+				todo.push({ name: item.param, open: false }, item.body, { name: item.param, open: true });
+				break;
+			case "let":
+				todo.push({ name: item.name, open: false }, item.body, { name: item.name, open: true }, item.value);
+				break;
+			default:
+				for (const child of childrenOf(item)) todo.push(child);
+		}
+	}
+	return free;
+};
+
+const fresh = (name: string, taken: ReadonlySet<string>): string => {
+	let candidate = name;
+	while (taken.has(candidate)) candidate += "'";
+	return candidate;
+};
+
+type SubFrame = {
+	readonly e: Expr;
+	readonly kids: (Expr | undefined)[];
+	next: number;
+	readonly limit: number;
+	readonly parent: SubFrame | null;
+	readonly slot: number;
+	readonly bound: string;
+	readonly callChild: number;
+	readonly callName: string;
+	readonly callValue: Expr | undefined;
+};
+
+type SubMachine = {
+	readonly name: string;
+	readonly value: Expr;
+	readonly free: ReadonlySet<string>;
+	top: SubFrame | null;
+	current: Expr | undefined;
+	target: SubFrame | null;
+	slot: number;
+};
+
+type Resume = { readonly machine: SubMachine; readonly frame: SubFrame | null; readonly slot: number };
+
+const assembled = (frame: SubFrame): Expr => {
+	const kids = frame.kids as readonly Expr[];
+	switch (frame.e.tag) {
 		case "lam":
-			return without(freeVars(e.body), e.param);
+			return { tag: "lam", param: frame.bound, body: kids[0] };
 		case "let":
-			return union(freeVars(e.value), without(freeVars(e.body), e.name));
+			return { tag: "let", name: frame.bound, value: kids[0], body: kids[1] };
+		case "app":
+			return { ...frame.e, fn: kids[0], arg: kids[1] };
+		case "binop":
+			return { ...frame.e, left: kids[0], right: kids[1] };
+		case "cons":
+			return { ...frame.e, head: kids[0], tail: kids[1] };
+		case "if":
+			return { ...frame.e, cond: kids[0], then: kids[1], else: kids[2] };
+		case "list":
+			return { ...frame.e, items: kids };
 		default:
-			return childrenOf(e).map(freeVars).reduce(union, EMPTY);
+			return frame.e;
 	}
 };
 
-const fresh = (name: string, taken: ReadonlySet<string>): string => (taken.has(name) ? fresh(`${name}'`, taken) : name);
-
 const substitute = (body: Expr, name: string, value: Expr): Expr => {
-	const free = freeVars(value);
+	const resumes: Resume[] = [];
+	let machine: SubMachine = { name, value, free: freeVars(value), top: null, current: body, target: null, slot: 0 };
 
-	const bind = (param: string, scope: Expr): readonly [string, Expr] => {
-		if (param === name) return [param, scope];
-		if (!free.has(param) || !freeVars(scope).has(name)) return [param, go(scope)];
-		const renamed = fresh(`${param}'`, union(union(free, freeVars(scope)), new Set([name])));
-		return [renamed, go(substitute(scope, param, { tag: "var", name: renamed }))];
-	};
-
-	const go = (e: Expr): Expr => {
-		switch (e.tag) {
-			case "num":
-			case "bool":
-			case "builtin":
-				return e;
-			case "var":
-				return e.name === name ? value : e;
-			case "lam": {
-				const [param, scope] = bind(e.param, e.body);
-				return { tag: "lam", param, body: scope };
-			}
-			case "let": {
-				const [bound, scope] = bind(e.name, e.body);
-				return { tag: "let", name: bound, value: go(e.value), body: scope };
-			}
-			case "app":
-				return { ...e, fn: go(e.fn), arg: go(e.arg) };
-			case "binop":
-				return { ...e, left: go(e.left), right: go(e.right) };
-			case "cons":
-				return { ...e, head: go(e.head), tail: go(e.tail) };
-			case "if":
-				return { ...e, cond: go(e.cond), then: go(e.then), else: go(e.else) };
-			case "list":
-				return { ...e, items: e.items.map(go) };
+	const deliver = (frame: SubFrame | null, slot: number, result: Expr): Expr | undefined => {
+		if (frame !== null) {
+			frame.kids[slot] = result;
+			return undefined;
 		}
+		const resume = resumes.pop();
+		if (resume === undefined) return result;
+		machine = resume.machine;
+		machine.current = result;
+		machine.target = resume.frame;
+		machine.slot = resume.slot;
+		return undefined;
 	};
 
-	return go(body);
+	for (;;) {
+		if (machine.current !== undefined) {
+			const e = machine.current;
+			machine.current = undefined;
+			if (e.tag === "num" || e.tag === "bool" || e.tag === "builtin") {
+				const done = deliver(machine.target, machine.slot, e);
+				if (done !== undefined) return done;
+				continue;
+			}
+			if (e.tag === "var") {
+				const replaced = e.name === machine.name ? machine.value : e;
+				const done = deliver(machine.target, machine.slot, replaced);
+				if (done !== undefined) return done;
+				continue;
+			}
+			if (e.tag === "lam" && e.param === machine.name) {
+				const done = deliver(machine.target, machine.slot, e);
+				if (done !== undefined) return done;
+				continue;
+			}
+			const kids: (Expr | undefined)[] = childrenOf(e).map(() => undefined);
+			let bound = "";
+			let limit = kids.length;
+			let callChild = -1;
+			let callName = "";
+			let callValue: Expr | undefined;
+			if (e.tag === "lam" || e.tag === "let") {
+				const param = e.tag === "lam" ? e.param : e.name;
+				const scope = e.body;
+				bound = param;
+				limit = e.tag === "lam" ? 1 : 2;
+				if (e.tag === "let" && param === machine.name) {
+					kids[1] = scope;
+					limit = 1;
+				} else if (machine.free.has(param) && freeVars(scope).has(machine.name)) {
+					bound = fresh(`${param}'`, union(union(machine.free, freeVars(scope)), new Set([machine.name])));
+					callChild = e.tag === "lam" ? 0 : 1;
+					callName = param;
+					callValue = { tag: "var", name: bound };
+				}
+			}
+			machine.top = { e, kids, next: 0, limit, parent: machine.target, slot: machine.slot, bound, callChild, callName, callValue };
+			continue;
+		}
+		const frame = machine.top!;
+		if (frame.next < frame.limit) {
+			const index = frame.next++;
+			if (index === frame.callChild) {
+				resumes.push({ machine, frame, slot: index });
+				machine = {
+					name: frame.callName,
+					value: frame.callValue!,
+					free: freeVars(frame.callValue!),
+					top: null,
+					current: childrenOf(frame.e)[index],
+					target: null,
+					slot: 0,
+				};
+			} else {
+				machine.current = childrenOf(frame.e)[index];
+				machine.target = frame;
+				machine.slot = index;
+			}
+			continue;
+		}
+		const result = assembled(frame);
+		machine.top = frame.parent;
+		const done = deliver(frame.parent, frame.slot, result);
+		if (done !== undefined) return done;
+	}
 };
