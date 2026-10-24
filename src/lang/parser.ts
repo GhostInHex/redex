@@ -135,10 +135,9 @@ function parseTokens(tokens: readonly Token[]): Expr {
 	};
 
 	const cons = (): Expr => {
-		const head = add();
-		if (!eat(":")) return head;
-		const tail = nested(cons);
-		return node({ tag: "cons", head, tail }, [head, tail]);
+		const items = [add()];
+		while (eat(":")) items.push(add());
+		return items.reduceRight((tail, head) => node({ tag: "cons", head, tail }, [head, tail]));
 	};
 
 	const leftAssoc = (tier: Tier, operand: () => Expr) => (): Expr => {

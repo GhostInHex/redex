@@ -227,6 +227,32 @@ const { expr: arbExpr } = fc.letrec<{ expr: Expr }>((tie) => ({
 	),
 }));
 
+const section = lam("a", lam("b", bin("+", v("a"), v("b"))));
+
+const wraps: readonly (readonly [number, (e: Expr) => Expr])[] = [
+	[2, (e) => ({ tag: "cons", head: num(1), tail: lam("x", e) })],
+	[2, (e) => ({ tag: "cons", head: num(1), tail: { tag: "if", cond: e, then: num(1), else: num(2) } })],
+	[1, (e) => ({ tag: "cons", head: e, tail: section })],
+	[2, (e) => bin("+", num(1), lam("x", e))],
+	[1, (e) => bin("*", e, section)],
+	[1, (e) => app(e, section)],
+	[1, (e) => app(section, e)],
+	[1, (e) => lam("x", e)],
+	[1, (e) => ({ tag: "let", name: "y", value: e, body: section })],
+	[1, (e) => ({ tag: "list", items: [e] })],
+];
+
+const tallTree = (height: number, picks: readonly number[]): Expr => {
+	let tree = section;
+	for (let h = 4, n = 0; h < height; n++) {
+		const [added, wrap] = wraps[picks[n % picks.length]];
+		const fits = h + added <= height;
+		tree = fits ? wrap(tree) : lam("x", tree);
+		h += fits ? added : 1;
+	}
+	return tree;
+};
+
 describe("round trip", () => {
 	it("parse(print(e)) equals e for any Expr", () => {
 		fc.assert(
@@ -234,6 +260,26 @@ describe("round trip", () => {
 				expect(parse(print(e))).toEqual(ok(e));
 			}),
 			{ numRuns: 2000 },
+		);
+	});
+
+	it("a tree parse accepts prints to text that parses back to it", () => {
+		const source = "1 : (\\x -> ".repeat(166) + "1 : (+)" + ")".repeat(166);
+		const first = parse(source);
+		expect(first.ok && parse(print(first.expr))).toEqual(first);
+	});
+
+	it("round-trips trees up to 500 high and rejects 501, with sections, lambdas, and parentheses", () => {
+		fc.assert(
+			fc.property(fc.array(fc.nat(wraps.length - 1), { minLength: 1 }), (picks) => {
+				for (let height = 490; height <= 500; height++) {
+					const tree = tallTree(height, picks);
+					expect(parse(print(tree))).toEqual(ok(tree));
+				}
+				const tooTall = parse(print(tallTree(501, picks)));
+				expect(!tooTall.ok && tooTall.error.message).toBe("expression is nested too deeply");
+			}),
+			{ numRuns: 100 },
 		);
 	});
 });
