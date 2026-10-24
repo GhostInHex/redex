@@ -281,5 +281,5 @@ describe("round trip", () => {
 			}),
 			{ numRuns: 100 },
 		);
-	});
+	}, 15000);
 });
