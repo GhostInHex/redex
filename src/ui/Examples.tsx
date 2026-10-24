@@ -1,17 +1,12 @@
-import { useRef, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { EXAMPLES } from "../lang/examples.ts";
 
 type Props = {
 	readonly onPick: (source: string) => void;
 };
 
-const summary: CSSProperties = {
-	cursor: "pointer",
-	padding: "6px 14px",
-	borderRadius: 8,
-	border: "1px solid #3a3f4f",
-	background: "#1b1e28",
-	listStyle: "none",
+const wrap: CSSProperties = {
+	position: "relative",
 };
 
 const panel: CSSProperties = {
@@ -50,27 +45,50 @@ const lesson: CSSProperties = {
 };
 
 export default function Examples({ onPick }: Props) {
-	const menu = useRef<HTMLDetailsElement>(null);
+	const [open, setOpen] = useState(false);
+	const wrapRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!open) return;
+		const onKey = (event: KeyboardEvent) => {
+			if (event.key === "Escape") setOpen(false);
+		};
+		const onPointer = (event: PointerEvent) => {
+			if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setOpen(false);
+		};
+		window.addEventListener("keydown", onKey);
+		window.addEventListener("pointerdown", onPointer);
+		return () => {
+			window.removeEventListener("keydown", onKey);
+			window.removeEventListener("pointerdown", onPointer);
+		};
+	}, [open]);
+
 	return (
-		<details ref={menu} style={{ position: "relative" }}>
-			<summary style={summary}>Examples</summary>
-			<ol style={panel} aria-label="Lesson examples">
-				{EXAMPLES.map((example) => (
-					<li key={example.id}>
-						<button
-							type="button"
-							style={item}
-							onClick={() => {
-								onPick(example.source);
-								if (menu.current) menu.current.open = false;
-							}}
-						>
-							<span>{example.title}</span>
-							<span style={lesson}>{example.lesson}</span>
-						</button>
-					</li>
-				))}
-			</ol>
-		</details>
+		<div ref={wrapRef} style={wrap}>
+			<button type="button" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((value) => !value)}>
+				Examples
+			</button>
+			{open && (
+				<ol style={panel} role="menu" aria-label="Lesson examples">
+					{EXAMPLES.map((example) => (
+						<li key={example.id} role="none">
+							<button
+								type="button"
+								role="menuitem"
+								style={item}
+								onClick={() => {
+									onPick(example.source);
+									setOpen(false);
+								}}
+							>
+								<span>{example.title}</span>
+								<span style={lesson}>{example.lesson}</span>
+							</button>
+						</li>
+					))}
+				</ol>
+			)}
+		</div>
 	);
 }

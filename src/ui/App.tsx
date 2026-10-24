@@ -120,6 +120,7 @@ export default function App() {
 			entry.shared || EMBED ? stepper(start, { type: "run", source: entry.source }, runSource) : start,
 	);
 	const [parseError, setParseError] = useState<ParseError | undefined>(undefined);
+	const [editorEpoch, setEditorEpoch] = useState(0);
 	const [shareOpen, setShareOpen] = useState(false);
 	const [copied, setCopied] = useState<"" | "link" | "embed">("");
 	const timer = useRef<number | undefined>(undefined);
@@ -130,6 +131,7 @@ export default function App() {
 
 	const pick = useCallback((next: string) => {
 		setSource(next);
+		setEditorEpoch((epoch) => epoch + 1);
 		dispatch({ type: "run", source: next });
 	}, []);
 
@@ -242,7 +244,7 @@ export default function App() {
 				</button>
 			</header>
 			{entry.notice && <p className="notice">{entry.notice}</p>}
-			<Editor source={source} errorLine={parseError?.line} errorCol={parseError?.col} onChange={setSource} />
+			<Editor key={editorEpoch} source={source} errorLine={parseError?.line} errorCol={parseError?.col} onChange={setSource} />
 			{state.status !== "error" && parseError && <p className="error">{parseError.message}</p>}
 			{state.status === "error" && <p className="error">{state.error}</p>}
 			{stepperView}
