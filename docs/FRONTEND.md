@@ -52,7 +52,7 @@ A per-tab draft is stored in session storage so a plain `/play` visit can restor
 
 The visual system is Glaze from [arla6ka/design.how](https://github.com/arla6ka/design.how), by Arlan Marat, licensed under MIT. The complete upstream license is in `src/components/glaze/LICENSE`.
 
-Button, Card, Panel, theme CSS, portal support, utilities and icons were installed from the official `https://design.how/r/glaze/` registry on 25 October 2026. Vendor source is in `src/components/glaze` and `src/lib/glaze`; its upstream comments are retained. Tailwind and alias configuration integrate the copied components into Vite. Official Glaze Sans/Mono fonts are not redistributed; Glaze's documented system-font fallbacks apply. The app uses the official light ink/paper tokens, pill controls, shell cards and primary-button glass recipe.
+Button, Card, Panel, theme CSS, portal support, utilities and icons were installed from the official `https://design.how/r/glaze/` registry on 25 October 2026. Vendor source is in `src/components/glaze` and `src/lib/glaze`; its upstream comments are retained. Tailwind and alias configuration integrate the copied components into Vite. Official Glaze Sans/Mono fonts are not redistributed. The app bundles Geist and Geist Mono through `@fontsource`, which Glaze's font stacks name as their first fallbacks. The app uses the official light ink/paper tokens, pill controls, shell cards and primary-button glass recipe.
 
 The existing native Share dialog is deliberately retained so its verified keyboard containment and clipboard fallback remain intact. It is styled with Glaze overlay/field roles. Existing expression picks and timeline controls retain their behavior and accessible names.
 
