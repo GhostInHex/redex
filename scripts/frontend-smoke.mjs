@@ -115,6 +115,17 @@ try {
     const menu = page.getByRole("menu");
     const box = await menu.boundingBox();
     assert.ok(box.x >= 0 && box.x + box.width <= width);
+    const labelsFit = await menu.getByRole("menuitem").evaluateAll(items =>
+      items.every(item => {
+        const row = item.getBoundingClientRect();
+        return [...item.children].every(child => {
+          const label = child.getBoundingClientRect();
+          return label.left >= row.left - 1 && label.right <= row.right + 1
+            && label.top >= row.top - 1 && label.bottom <= row.bottom + 1;
+        });
+      }),
+    );
+    assert.ok(labelsFit, `lesson titles and descriptions fit their rows at ${width}px`);
     await page.getByRole("menuitem").last().click();
     await page.locator(".counter").waitFor();
     if (width === 390) await shot("playground-mobile");
