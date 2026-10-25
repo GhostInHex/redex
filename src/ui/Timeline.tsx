@@ -14,6 +14,7 @@ type Props = {
 export default function Timeline({ index, last, playing, onBack, onNext, onSeek, onPlay, onPause }: Props) {
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
+			if (document.querySelector("dialog:modal")) return;
 			const target = event.target as HTMLElement | null;
 			if (event.defaultPrevented || target?.closest(".cm-editor, input, textarea, select, button, a[href], [contenteditable], [role='button'], [role='menuitem'], [role='dialog']")) return;
 			if (event.key === "ArrowRight") {
