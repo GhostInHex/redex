@@ -85,7 +85,6 @@ button.run {
 	padding: 4px 0;
 }
 
-.expr-display-note,
 .expr-note {
 	margin: 0;
 	color: #8b93a7;
@@ -157,6 +156,78 @@ button.run {
 	color: #8b93a7;
 	min-width: 64px;
 	text-align: right;
+}
+
+.mode-toggle {
+	display: inline-flex;
+	border: 1px solid #3a3f4f;
+	border-radius: 8px;
+	overflow: hidden;
+}
+
+.mode-toggle .mode {
+	border: 0;
+	border-radius: 0;
+	padding: 6px 12px;
+	background: #1b1e28;
+	color: #8b93a7;
+}
+
+.mode-toggle .mode.on {
+	background: #4f7cff;
+	color: #fff;
+}
+
+.pick {
+	cursor: pointer;
+	border-radius: 6px;
+	outline-offset: 2px;
+}
+
+.pick:hover {
+	outline: 1px dashed #9db8ff;
+}
+
+.pick:focus-visible {
+	outline: 2px solid #9db8ff;
+}
+
+.node.wrong,
+.box.wrong {
+	background: rgba(255, 107, 107, 0.22);
+	outline: 1px solid #ff6b6b;
+	border-radius: 6px;
+	padding: 0 3px;
+}
+
+.practice {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.practice-ask {
+	margin: 0;
+	font-size: 15px;
+	color: #e8eaf0;
+}
+
+.practice-score {
+	margin: 0;
+	font-size: 13px;
+	color: #8b93a7;
+}
+
+.practice-score .right {
+	color: #8ce0b0;
+}
+
+.practice-score .wrong {
+	color: #ff9c9c;
+}
+
+.practice-next {
+	align-self: flex-start;
 }
 
 .share-dialog {

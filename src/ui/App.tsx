@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from "react";
 import type { ParseError } from "../lang/ast.ts";
 import { parse } from "../lang/parser.ts";
 import { trace } from "../lang/trace.ts";
@@ -8,6 +8,7 @@ import Editor from "./Editor.tsx";
 import Embed from "./Embed.tsx";
 import Examples from "./Examples.tsx";
 import ExprView from "./ExprView.tsx";
+import Practice from "./Practice.tsx";
 import Timeline from "./Timeline.tsx";
 import { frameAt, initialStepper, stepper, type RunSource, type StepperState } from "./stepper.ts";
 
@@ -98,6 +99,7 @@ export default function App() {
 		(start: StepperState): StepperState =>
 			entry.shared || EMBED ? stepper(start, { type: "run", source: entry.source }, runSource) : start,
 	);
+	const [mode, setMode] = useState<"watch" | "practice">("watch");
 	const [parseError, setParseError] = useState<ParseError | undefined>(undefined);
 	const [editorEpoch, setEditorEpoch] = useState(0);
 	const runPendingTime = useRef<number | null>(null);
@@ -112,6 +114,8 @@ export default function App() {
 		setParseError(parsed.ok ? undefined : parsed.error);
 	}, []);
 
+	const setWatch = useCallback(() => setMode("watch"), []);
+	const setPractice = useCallback(() => setMode("practice"), []);
 	const run = useCallback(() => {
 		runPendingTime.current = performance.now();
 		const parsed = parse(source);
@@ -189,7 +193,9 @@ export default function App() {
 	const limitKind = ready && state.index === state.trace.steps.length && state.trace.outcome.tag === "limit" ? state.trace.outcome.kind : undefined;
 
 	const stepperView =
-		ready && frame ? (
+		mode === "practice" && ready ? (
+			<Practice trace={state.trace} />
+		) : ready && frame ? (
 			<>
 				<ExprView
 					frame={frame}
@@ -217,6 +223,14 @@ export default function App() {
 			<Embed program={source}>
 				{entry.notice && <p className="error">{entry.notice}</p>}
 				{state.status === "error" && <p className="error">{state.error}</p>}
+				<div className="mode-toggle" role="group" aria-label="Playback mode">
+					<button type="button" className={mode === "watch" ? "mode on" : "mode"} aria-pressed={mode === "watch"} onClick={setWatch}>
+						Watch
+					</button>
+					<button type="button" className={mode === "practice" ? "mode on" : "mode"} aria-pressed={mode === "practice"} onClick={setPractice}>
+						Practice
+					</button>
+				</div>
 				{stepperView}
 			</Embed>
 		);
@@ -229,6 +243,14 @@ export default function App() {
 				<button type="button" className="run" onClick={run}>
 					Run
 				</button>
+				<div className="mode-toggle" role="group" aria-label="Playback mode">
+					<button type="button" className={mode === "watch" ? "mode on" : "mode"} aria-pressed={mode === "watch"} onClick={setWatch}>
+						Watch
+					</button>
+					<button type="button" className={mode === "practice" ? "mode on" : "mode"} aria-pressed={mode === "practice"} onClick={setPractice}>
+						Practice
+					</button>
+				</div>
 				<Examples onPick={pick} />
 				<button
 					type="button"

@@ -1,0 +1,10 @@
+﻿import { chromium } from "playwright";
+const browser = await chromium.launch();
+const page = await browser.newPage();
+await page.goto("http://localhost:5172");
+await page.getByRole("button", { name: "Run" }).click();
+await page.getByRole("button", { name: "Practice", exact: true }).click();
+await page.waitForTimeout(500);
+const paths = await page.locator(".expr-line [data-path]").evaluateAll((nodes) => nodes.map((n) => `${n.getAttribute("data-path")}:${n.textContent}`));
+console.log(JSON.stringify(paths, null, 1));
+await browser.close();
