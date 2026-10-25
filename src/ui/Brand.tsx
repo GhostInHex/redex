@@ -1,7 +1,7 @@
 import { appRoot } from "../entry.ts";
 export default function Brand() {
   return (
-    <a className="brand" href={appRoot()} aria-label="Redex home">
+    <a className="brand" href={appRoot()}>
       <span className="brand-mark" aria-hidden="true">
         r.
       </span>
