@@ -34,6 +34,11 @@ const panel: CSSProperties = {
 const item: CSSProperties = {
   display: "flex",
   flexDirection: "column",
+  alignItems: "flex-start",
+  justifyContent: "flex-start",
+  height: "auto",
+  minHeight: "var(--control)",
+  whiteSpace: "normal",
   gap: 2,
   width: "100%",
   boxSizing: "border-box",
@@ -45,6 +50,8 @@ const item: CSSProperties = {
 };
 
 const lesson: CSSProperties = {
+  maxWidth: "100%",
+  overflowWrap: "anywhere",
   color: "var(--text-2)",
   fontSize: 13,
   lineHeight: 1.4,
